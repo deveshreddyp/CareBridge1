@@ -1,0 +1,72 @@
+
+rules_version = '2';
+service cloud.firestore {
+match /databases/{database}/documents {
+
+// /artifacts/{appId}/...
+match /artifacts/{appId} {
+
+  // Public profiles for doctors (Read-only for all, write-only for owner)
+  // /artifacts/{appId}/public_profiles/{userId}
+  match /public_profiles/{userId} {
+    allow read: if true;
+    allow write: if request.auth != null && request.auth.uid == userId;
+  }
+  
+  // Appointment data (Read/Write for involved patient or doctor)
+  // /artifacts/{appId}/appointments/{apptId}
+  match /appointments/{apptId} {
+    allow read, write: if request.auth != null && (
+                        request.auth.uid == resource.data.patientId || 
+                        request.auth.uid == resource.data.doctorId
+                      );
+    allow create: if request.auth != null && request.auth.uid == request.resource.data.patientId;
+  }
+  
+  // Notifications (Read/Write for the patient it's intended for)
+  // /artifacts/{appId}/notifications/{notifId}
+  match /notifications/{notifId} {
+    allow read, write: if request.auth != null && request.auth.uid == resource.data.patientId;
+    allow create: if request.auth != null; // Doctors create these
+  }
+
+  // User-specific private data
+  // /artifacts/{appId}/users/{userId}/{...}
+  match /users/{userId} {
+    allow read, write: if request.auth != null && request.auth.uid == userId;
+    
+    // You can add sub-collections here if needed
+    // e.g., match /private_notes/{noteId} { ... }
+  }
+  
+  // Public data (like the analysis queue)
+  // /artifacts/{appId}/public/data/{...}
+  match /public/data/{collection} {
+  
+    // Analysis Queue
+    // /artifacts/{appId}/public/data/analysisQueue/{caseId}
+    match /analysisQueue/{caseId} {
+      // Patients can create (submit) cases
+      allow create: if request.auth != null && request.resource.data.patientId == request.auth.uid;
+      
+      // Patients can read their own cases
+      allow read: if request.auth != null && resource.data.patientId == request.auth.uid;
+      
+      // Doctors and Interns can read all cases
+      allow read: if request.auth != null && (
+                    get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.role == 'doctor' || 
+                    get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.role == 'intern'
+                  );
+                  
+      // Doctors and Interns can update (review) cases
+      allow update: if request.auth != null && (
+                    get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.role == 'doctor' || 
+                    get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.role == 'intern'
+                  );
+    }
+  }
+}
+
+
+}
+}

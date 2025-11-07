@@ -1,0 +1,2579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareBridge1 - Prototype (Error Fix)</title>
+  
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    /* Custom styles for chatbot messages and scrollbar */
+    #chat-messages {
+      scroll-behavior: smooth;
+    }
+    /* Simple custom scrollbar */
+    #chat-messages::-webkit-scrollbar {
+      width: 6px;
+    }
+    #chat-messages::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+    #chat-messages::-webkit-scrollbar-thumb {
+      background: #c5c5c5;
+      border-radius: 10px;
+    }
+    #chat-messages::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
+    }
+    .bot-message {
+      background-color: #f3f4f6; /* gray-100 */
+      color: #1f2937; /* gray-800 */
+      align-self: flex-start;
+      border-radius: 20px 20px 20px 5px;
+    }
+    .user-message {
+      background-color: #3b82f6; /* blue-500 */
+      color: white;
+      align-self: flex-end;
+      border-radius: 20px 20px 5px 20px;
+    }
+    .chat-option-button {
+      background-color: #e0f2fe; /* blue-100 */
+      color: #0369a1; /* blue-700 */
+      border: 1px solid #bae6fd; /* blue-200 */
+      padding: 8px 12px;
+      border-radius: 18px;
+      font-size: 0.875rem; /* 14px */
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .chat-option-button:hover {
+      background-color: #bae6fd; /* blue-200 */
+    }
+  </style>
+
+  <!-- Load Firebase SDKs -->
+  <script type="module">
+    // --- Firebase 11.6.1 SDKs ---
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      onAuthStateChanged,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      collection, 
+      addDoc, 
+      onSnapshot, 
+      doc, 
+      updateDoc, 
+      setDoc,
+      getDoc,
+      getDocs,
+      query,
+      where,
+      limit,
+      orderBy,
+      setLogLevel
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { 
+      getStorage, 
+      ref, 
+      uploadBytes, 
+      getDownloadURL 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+    // --- Google AI Studio API Key ---
+    // const GEMINI_API_KEY = "YOUR_API_KEY_HERE"; // Not used in this version
+
+    // --- Application State ---
+    let appState = {
+      user: null, 
+      userId: null, 
+      userRole: null, 
+      userProfile: null, 
+      view: null, // 'login', 'patient', 'doctor', 'intern', 'my_records', 'my_profile', 'find_doctor', 'my_appointments'
+      analysisQueue: [],
+      patientRecords: [],
+      doctors: [], // For 'Find a Doctor'
+      appointments: [], // For 'My Appointments'
+      notifications: [], // For patient notification bell
+      isLoading: true,
+      error: null,
+      symptoms: '',
+      imageFile: null,
+      imagePreview: null,
+      language: 'en', // 'en', 'kn', 'hi'
+      isRecording: false, // New state for voice recording
+    };
+    // --- FIX: Expose appState to the global window object ---
+    window.appState = appState;
+
+    // --- Translations ---
+    const translations = {
+      en: {
+        // General
+        app_name: 'CareBridge1',
+        // Login Screen
+        login_headline: 'Advanced Healthcare with AI-Powered Telemedicine',
+        login_subheadline: 'Transforming healthcare delivery with seamless telemedicine, AI-assisted diagnostics, and comprehensive health record management.',
+        welcome_back: 'Welcome Back',
+        choose_role: 'Choose your role to continue your healthcare journey',
+        patient: 'Patient',
+        doctor: 'Doctor',
+        intern: 'Intern',
+        create_patient_account: 'Create Patient Account',
+        welcome_back_patient: 'Welcome Back, Patient',
+        register_patient_text: 'Register to access your health dashboard.',
+        login_patient_text: 'Log in to continue your journey.',
+        professional_registration: 'Professional Registration',
+        professional_login: 'Professional Login',
+        register_pro_text: 'Create your Doctor or Intern account.',
+        login_pro_text: 'Doctor & Intern access.',
+        register: 'Register',
+        sign_in: 'Sign In',
+        already_have_account: 'Already have an account?',
+        dont_have_account: "Don't have an account?",
+        email: 'Email',
+        password: 'Password',
+        your_role: 'Your Role',
+        forgot_password: 'Forgot password?',
+        back_to_role_selection: 'Back to role selection',
+        // Header
+        dashboard: 'Dashboard',
+        my_records: 'My Records',
+        find_a_doctor: 'Find a Doctor',
+        my_appointments: 'My Appointments',
+        my_profile: 'My Profile',
+        notifications: 'Notifications',
+        no_new_notifications: 'No new notifications.',
+        reply_from: 'Reply from',
+        view_and_mark_as_read: 'View and Mark as Read',
+        log_out: 'Log Out',
+        // Patient Dashboard
+        ai_symptom_checker: 'AI Symptom Checker',
+        voice_to_text: 'Voice to Text',
+        voice_to_text_desc: 'Describe your symptoms by speaking. (This feature is a UI mockup).',
+        start_recording: 'Start Recording',
+        describe_symptoms: 'Describe Symptoms',
+        upload_images: 'Upload Images',
+        describe_symptoms_label: 'Describe your symptoms',
+        describe_symptoms_placeholder: "e.g., 'I have a fever, headache, and a persistent cough...'",
+        upload_images_label: 'Upload medical images for AI analysis',
+        image_preview: 'Image Preview:',
+        submit_for_ai_analysis: 'Submit for AI Analysis',
+      },
+      kn: {
+        // General
+        app_name: 'ಕೇರ್‌ಬ್ರಿಡ್ಜ್1',
+        // Login Screen
+        login_headline: 'AI-ಚಾಲಿತ ಟೆಲಿಮೆಡಿಸಿನ್‌ನೊಂದಿಗೆ ಸುಧಾರಿತ ಆರೋಗ್ಯ ರಕ್ಷಣೆ',
+        login_subheadline: 'ತಡೆರಹಿತ ಟೆಲಿಮೆಡಿಸಿನ್, AI-ಸಹಾಯದ ರೋಗನಿರ್ಣಯ, ಮತ್ತು ಸಮಗ್ರ ಆರೋಗ್ಯ ದಾಖಲೆ ನಿರ್ವಹಣೆಯೊಂದಿಗೆ ಆರೋಗ್ಯ ವಿತರಣೆಯನ್ನು ಪರಿವರ್ತಿಸುವುದು.',
+        welcome_back: 'ಮರಳಿ ಸ್ವಾಗತ',
+        choose_role: 'ನಿಮ್ಮ ಆರೋಗ್ಯ ಪ್ರಯಾಣವನ್ನು ಮುಂದುವರಿಸಲು ನಿಮ್ಮ ಪಾತ್ರವನ್ನು ಆರಿಸಿ',
+        patient: 'ರೋಗಿ',
+        doctor: 'ವೈದ್ಯರು',
+        intern: 'ಇಂಟರ್ನ್',
+        create_patient_account: 'ರೋಗಿಯ ಖಾತೆಯನ್ನು ರಚಿಸಿ',
+        welcome_back_patient: 'ಮರಳಿ ಸ್ವಾಗತ, ರೋಗಿ',
+        register_patient_text: 'ನಿಮ್ಮ ಆರೋಗ್ಯ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ಪ್ರವೇಶಿಸಲು ನೋಂದಾಯಿಸಿ.',
+        login_patient_text: 'ನಿಮ್ಮ ಪ್ರಯಾಣವನ್ನು ಮುಂದುವರಿಸಲು ಲಾಗಿನ್ ಮಾಡಿ.',
+        professional_registration: 'ವೃತ್ತಿಪರ ನೋಂದಣಿ',
+        professional_login: 'ವೃತ್ತಿಪರ ಲಾಗಿನ್',
+        register_pro_text: 'ನಿಮ್ಮ ವೈದ್ಯರು ಅಥವಾ ಇಂಟರ್ನ್ ಖಾತೆಯನ್ನು ರಚಿಸಿ.',
+        login_pro_text: 'ವೈದ್ಯರು ಮತ್ತು ಇಂಟರ್ನ್ ಪ್ರವೇಶ.',
+        register: 'ನೋಂದಾಯಿಸಿ',
+        sign_in: 'ಸೈನ್ ಇನ್ ಮಾಡಿ',
+        already_have_account: 'ಈಗಾಗಲೇ ಖಾತೆ ಇದೆಯೇ?',
+        dont_have_account: "ಖಾತೆ ಇಲ್ಲವೇ?",
+        email: 'ಇಮೇಲ್',
+        password: 'ಪಾಸ್ವರ್ಡ್',
+        your_role: 'ನಿಮ್ಮ ಪಾತ್ರ',
+        forgot_password: 'ಪಾಸ್ವರ್ಡ್ ಮರೆತಿರಾ?',
+        back_to_role_selection: 'ಪಾತ್ರ ಆಯ್ಕೆಗೆ ಹಿಂತಿರುಗಿ',
+        // Header
+        dashboard: 'ಡ್ಯಾಶ್‌ಬೋರ್ಡ್',
+        my_records: 'ನನ್ನ ದಾಖಲೆಗಳು',
+        find_a_doctor: 'ವೈದ್ಯರನ್ನು ಹುಡುಕಿ',
+        my_appointments: 'ನನ್ನ ನೇಮಕಾತಿಗಳು',
+        my_profile: 'ನನ್ನ ಪ್ರೊಫೈಲ್',
+        notifications: 'ಅಧಿಸೂಚನೆಗಳು',
+        no_new_notifications: 'ಹೊಸ ಅಧಿಸೂಚನೆಗಳಿಲ್ಲ.',
+        reply_from: 'ಇವರಿಂದ ಪ್ರತ್ಯುತ್ತರ',
+        view_and_mark_as_read: 'ವೀಕ್ಷಿಸಿ ಮತ್ತು ಓದಿದೆ ಎಂದು ಗುರುತಿಸಿ',
+        log_out: 'ಲಾಗ್ ಔಟ್',
+        // Patient Dashboard
+        ai_symptom_checker: 'AI ರೋಗಲಕ್ಷಣ ಪರೀಕ್ಷಕ',
+        voice_to_text: 'ಧ್ವನಿಯಿಂದ ಪಠ್ಯಕ್ಕೆ',
+        voice_to_text_desc: 'ಮಾತನಾಡುವ ಮೂಲಕ ನಿಮ್ಮ ರೋಗಲಕ್ಷಣಗಳನ್ನು ವಿವರಿಸಿ. (ಈ ವೈಶಿಷ್ಟ್ಯವು UI ಮಾಕಪ್ ಆಗಿದೆ).',
+        start_recording: 'ರೆಕಾರ್ಡಿಂಗ್ ಪ್ರಾರಂಭಿಸಿ',
+        describe_symptoms: 'ರೋಗಲಕ್ಷಣಗಳನ್ನು ವಿವರಿಸಿ',
+        upload_images: 'ಚಿತ್ರಗಳನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ',
+        describe_symptoms_label: 'ನಿಮ್ಮ ರೋಗಲಕ್ಷಣಗಳನ್ನು ವಿವರಿಸಿ',
+        describe_symptoms_placeholder: "ಉದಾ., 'ನನಗೆ ಜ್ವರ, ತಲೆನೋವು ಮತ್ತು ನಿರಂತರ ಕೆಮ್ಮು ಇದೆ...'",
+        upload_images_label: 'AI ವಿಶ್ಲೇಷಣೆಗಾಗಿ ವೈದ್ಯಕೀಯ ಚಿತ್ರಗಳನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ',
+        image_preview: 'ಚಿತ್ರ ಪೂರ್ವವೀಕ್ಷಣೆ:',
+        submit_for_ai_analysis: 'AI ವಿಶ್ಲೇಷಣೆಗಾಗಿ ಸಲ್ಲಿಸಿ',
+      },
+      hi: {
+        // General
+        app_name: 'केयरब्रिज1',
+        // Login Screen
+        login_headline: 'एआई-संचालित टेलीमेडिसिन के साथ उन्नत स्वास्थ्य सेवा',
+        login_subheadline: 'निर्बाध टेलीमेडिसिन, एआई-सहायता प्राप्त निदान और व्यापक स्वास्थ्य रिकॉर्ड प्रबंधन के साथ स्वास्थ्य सेवा वितरण को बदलना।',
+        welcome_back: 'वापस स्वागत है',
+        choose_role: 'अपनी स्वास्थ्य यात्रा जारी रखने के लिए अपनी भूमिका चुनें',
+        patient: 'मरीज़',
+        doctor: 'डॉक्टर',
+        intern: 'इंटर्न',
+        create_patient_account: 'रोगी खाता बनाएं',
+        welcome_back_patient: 'वापस स्वागत है, मरीज़',
+        register_patient_text: 'अपने स्वास्थ्य डैशबोर्ड तक पहुंचने के लिए पंजीकरण करें।',
+        login_patient_text: 'अपनी यात्रा जारी रखने के लिए लॉग इन करें।',
+        professional_registration: 'व्यावसायिक पंजीकरण',
+        professional_login: 'व्यावसायिक लॉगिन',
+        register_pro_text: 'अपना डॉक्टर या इंटर्न खाता बनाएं।',
+        login_pro_text: 'डॉक्टर और इंटर्न पहुंच।',
+        register: 'पंजीकरण करें',
+        sign_in: 'साइन इन करें',
+        already_have_account: 'पहले से ही एक खाता है?',
+        dont_have_account: "खाता नहीं है?",
+        email: 'ईमेल',
+        password: 'पासवर्ड',
+        your_role: 'आपकी भूमिका',
+        forgot_password: 'पासवर्ड भूल गए?',
+        back_to_role_selection: 'भूमिका चयन पर वापस जाएं',
+        // Header
+        dashboard: 'डैशबोर्ड',
+        my_records: 'मेरे रिकॉर्ड',
+        my_appointments: 'मेरी नियुक्तियाँ',
+        find_a_doctor: 'डॉक्टर खोजें',
+        my_profile: 'मेरी प्रोफाइल',
+        notifications: 'सूचनाएं',
+        no_new_notifications: 'कोई नई सूचनाएं नहीं।',
+        reply_from: 'से जवाब',
+        view_and_mark_as_read: 'देखें और पढ़ा हुआ चिह्नित करें',
+        log_out: 'लॉग आउट',
+        // Patient Dashboard
+        ai_symptom_checker: 'एआई लक्षण परीक्षक',
+        voice_to_text: 'आवाज से पाठ',
+        voice_to_text_desc: 'बोलकर अपने लक्षणों का वर्णन करें। (यह सुविधा एक यूआई मॉकअप है)।',
+        start_recording: 'रिकॉर्डिंग शुरू करें',
+        describe_symptoms: 'लक्षणों का वर्णन करें',
+        upload_images: 'छवियां अपलोड करें',
+        describe_symptoms_label: 'अपने लक्षणों का वर्णन करें',
+        describe_symptoms_placeholder: "जैसे, 'मुझे बुखार, सिरदर्द और लगातार खांसी है...'",
+        upload_images_label: 'एआई विश्लेषण के लिए मेडिकल छवियां अपलोड करें',
+        image_preview: 'छवि पूर्वावलोकन:',
+        submit_for_ai_analysis: 'एआई विश्लेषण के लिए सबमिट करें',
+      }
+    };
+
+    // --- Translation Function ---
+    function t(key) {
+      const lang = appState.language || 'en';
+      return translations[lang][key] || translations['en'][key] || key;
+    }
+
+    // --- Language Setter ---
+    function setLanguage(lang) {
+      if (['en', 'kn', 'hi'].includes(lang)) {
+        setState({ language: lang });
+      }
+    }
+
+    // --- Firebase Configuration ---
+    // DO NOT HARDCODE API KEYS IN A REAL APP
+    // This is a placeholder for a real config object
+    const firebaseConfig = {
+      apiKey: "AIzaSyAGSyTR7qtnfmAazCONi4M3-0T7LUGxC1w",
+      authDomain: "carebridge1-10499.firebaseapp.com",
+      projectId: "carebridge1-10499",
+      storageBucket: "carebridge1-10499.firebasestorage.app",
+      messagingSenderId: "808313140179",
+      appId: "1:808313140179:web:0d92e8218a799e8fa5f526"
+    };
+    
+    // This variable is expected to be injected in the real environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    
+    // --- Initialize Firebase ---
+    let app, auth, db, storage;
+    let analysisUnsubscribe = null; 
+    let appointmentsUnsubscribe = null;
+    let notificationsUnsubscribe = null; // Listener for notifications
+
+    try {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      storage = getStorage(app);
+      // setLogLevel('debug'); // Uncomment for detailed Firebase logs
+    } catch (e) {
+      console.error("Error initializing Firebase:", e);
+      appState.error = "Failed to initialize app. Please refresh.";
+      renderApp();
+    }
+
+    // --- State Management ---
+    function setState(newState) {
+      const oldState = { ...appState };
+      appState = { ...appState, ...newState };
+      // --- FIX: Keep the global window.appState in sync ---
+      window.appState = appState;
+      renderApp(oldState);
+    }
+
+    // --- Error Handling ---
+    function renderError(message) {
+      setState({ error: message, isLoading: false });
+    }
+    
+    function clearError() {
+      setState({ error: null });
+    }
+
+    // --- DOM Elements ---
+    const appRoot = document.getElementById('app');
+
+    // --- Main Render Function ---
+    function renderApp(oldState = {}) {
+      const { view, isLoading, error, language } = appState;
+      
+      if (oldState.view !== view || oldState.language !== language || appRoot.innerHTML === '') {
+        appRoot.innerHTML = ''; 
+        let viewElement;
+        switch(view) {
+          case 'login':
+            viewElement = createLoginScreen();
+            break;
+          case 'patient':
+            viewElement = createPatientDashboard();
+            break;
+          case 'intern':
+            viewElement = createInternDashboard();
+            break;
+          case 'doctor':
+            viewElement = createDoctorDashboard();
+            break;
+          case 'my_records':
+            viewElement = createMyRecordsPage();
+            break;
+          case 'my_profile':
+            viewElement = createMyProfilePage();
+            break;
+          case 'find_doctor':
+            viewElement = createFindDoctorPage();
+            break;
+          case 'my_appointments':
+            viewElement = createAppointmentsPage();
+            break;
+          default:
+             if (!isLoading) {
+              viewElement = createLoginScreen();
+              appRoot.appendChild(viewElement);
+            }
+            break;
+        }
+        if (viewElement) {
+          appRoot.appendChild(viewElement);
+        }
+
+      } else {
+        // ... (Partial re-render logic for doctor/intern queue, etc.) ...
+        if (view === 'doctor' || view === 'intern') {
+          const queueList = document.getElementById('queueList');
+          if (queueList) {
+            const pendingCases = appState.analysisQueue.filter(c => c.status === 'pending_review');
+            queueList.innerHTML = pendingCases.length === 0
+              ? `<div class="p-6 text-center text-gray-500">No pending reviews.</div>`
+              : pendingCases.map(createAnalysisQueueItem).join('');
+          }
+          const reviewCount = document.getElementById('pendingReviewCount');
+          if (reviewCount) {
+            const count = appState.analysisQueue.filter(c => c.status === 'pending_review').length;
+            reviewCount.textContent = ` ${count} pending review${count === 1 ? '' : 's'}.`;
+          }
+        }
+        
+        // Update notification bell in header
+        const notificationBell = document.getElementById('notification-bell');
+        if (notificationBell) {
+          const unreadCount = appState.notifications.filter(n => n.status === 'unread').length;
+          const redDot = notificationBell.querySelector('#notification-dot');
+          if (unreadCount > 0 && !redDot) {
+            notificationBell.insertAdjacentHTML('beforeend', `<span id="notification-dot" class="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>`);
+          } else if (unreadCount === 0 && redDot) {
+            redDot.remove();
+          }
+        }
+      }
+
+      // Handle loading overlay
+      const loadingEl = document.getElementById('loading-overlay');
+      if (isLoading) {
+        if (!loadingEl) {
+          appRoot.appendChild(createLoadingSpinner());
+        }
+      } else {
+        if (loadingEl) {
+          loadingEl.remove();
+        }
+        const initialLoader = document.getElementById('initial-loader');
+        if (initialLoader) {
+          initialLoader.remove();
+        }
+      }
+      
+      // Handle error message
+      const errorEl = document.getElementById('error-message');
+      if (error) {
+        if (!errorEl) {
+          appRoot.appendChild(createErrorMessage(error, clearError));
+        } else {
+          errorEl.querySelector('span').textContent = error;
+        }
+      } else {
+        if (errorEl) {
+          errorEl.remove();
+        }
+      }
+    }
+    
+    // --- Authentication ---
+    function detachAllListeners() {
+      if (analysisUnsubscribe) analysisUnsubscribe();
+      if (appointmentsUnsubscribe) appointmentsUnsubscribe();
+      if (notificationsUnsubscribe) notificationsUnsubscribe();
+      analysisUnsubscribe = null;
+      appointmentsUnsubscribe = null;
+      notificationsUnsubscribe = null;
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const userId = user.uid;
+        try {
+          // Use the dynamic appId here
+          const userDocPath = `artifacts/${appId}/users/${userId}`;
+          const userDocRef = doc(db, userDocPath);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setState({ 
+              user: user, 
+              userId: userId, 
+              userRole: userData.role, 
+              userProfile: userData, 
+              view: userData.role, 
+              isLoading: false 
+            });
+            // Attach all relevant listeners for this user
+            attachAppointmentsListener(userId, userData.role);
+            if (userData.role === 'doctor' || userData.role === 'intern') {
+              attachAnalysisListener();
+            }
+            if (userData.role === 'patient') {
+              attachNotificationsListener(userId);
+            }
+          } else {
+            console.warn("User document not found, logging out.");
+            await handleLogout();
+          }
+        } catch (e) {
+          console.error("Error fetching user role:", e);
+          renderError("Failed to fetch user profile.");
+          await handleLogout(); 
+        }
+      } else {
+        detachAllListeners();
+        setState({ 
+          user: null, userId: null, userRole: null, userProfile: null, 
+          view: 'login', isLoading: false, 
+          analysisQueue: [], patientRecords: [], doctors: [], appointments: [], notifications: []
+        });
+      }
+    });
+
+    async function handleRegister(email, password, role) {
+      setState({ isLoading: true, error: null });
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        const userId = user.uid;
+        
+        const userDocPath = `artifacts/${appId}/users/${userId}`;
+        const profileData = {
+          email: user.email,
+          role: role,
+          createdAt: new Date(),
+          firstName: '',
+          lastName: '',
+          phone: '',
+          dob: '',
+          address: '',
+          specialty: (role === 'doctor') ? 'General Medicine' : '',
+          isPublic: (role === 'doctor') ? false : false,
+        };
+        await setDoc(doc(db, userDocPath), profileData);
+        
+        // If doctor, create public profile
+        if (role === 'doctor') {
+          // Use helper to create/update public profile
+          await updatePublicProfile(userId, profileData);
+        }
+        
+        // No need to setState, onAuthStateChanged will handle it
+        
+      } catch (e) {
+        console.error("Error registering:", e);
+        renderError(e.message);
+      }
+    }
+
+    async function handleLogin(email, password) {
+      setState({ isLoading: true, error: null });
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // No need to setState, onAuthStateChanged will handle it
+      } catch (e) {
+        console.error("Error logging in:", e);
+        renderError(e.message);
+      }
+    }
+
+    async function handleLogout() {
+      // setState({ isLoading: true }); // BUG FIX: Removed this line
+      try {
+        await signOut(auth);
+        // onAuthStateChanged will handle the state reset
+      } catch (e) {
+        console.error("Error logging out:", e);
+        renderError(e.message);
+      }
+    }
+
+    async function handleUpdateProfile(e) {
+      e.preventDefault();
+      setState({ isLoading: true, error: null });
+      
+      const formData = new FormData(e.target);
+      const updatedProfileData = {
+        firstName: formData.get('firstName') || '',
+        lastName: formData.get('lastName') || '',
+        phone: formData.get('phone') || '',
+        dob: formData.get('dob') || '',
+        address: formData.get('address') || '',
+        // Only update fields relevant to the role
+        ...(appState.userRole === 'doctor' && {
+          specialty: formData.get('specialty') || '',
+          isPublic: formData.get('isPublic') === 'on',
+        })
+      };
+
+      try {
+        const userDocPath = `artifacts/${appId}/users/${appState.userId}`;
+        const userDocRef = doc(db, userDocPath);
+        await updateDoc(userDocRef, updatedProfileData);
+        
+        // Update public profile if doctor
+        if (appState.userRole === 'doctor') {
+          // We need the full profile data for the public profile helper
+          const fullProfileForSync = { ...appState.userProfile, ...updatedProfileData };
+          await updatePublicProfile(appState.userId, fullProfileForSync);
+        }
+        
+        setState({ 
+          isLoading: false, 
+          userProfile: { ...appState.userProfile, ...updatedProfileData } 
+        });
+        
+        // Show a non-blocking success message
+        const successMessage = document.createElement('div');
+        successMessage.className = "fixed top-5 right-5 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg z-50 shadow-lg";
+        successMessage.innerHTML = `<span>Profile Updated Successfully!</span>`;
+        appRoot.appendChild(successMessage);
+        setTimeout(() => successMessage.remove(), 3000);
+
+      } catch (err) {
+        console.error("Error updating profile:", err);
+        renderError("Failed to update profile.");
+      }
+    }
+    
+    // --- Public Profile Sync ---
+    async function updatePublicProfile(userId, profileData) {
+      const publicDocPath = `artifacts/${appId}/public_profiles/${userId}`;
+      // Ensure only public-safe data is synced
+      const publicData = {
+        firstName: profileData.firstName || '',
+        lastName: profileData.lastName || '',
+        specialty: profileData.specialty || 'General Medicine',
+        isPublic: profileData.isPublic || false,
+      };
+      // setDoc with merge:true will create or update
+      await setDoc(doc(db, publicDocPath), publicData, { merge: true });
+    }
+
+    // --- Firestore Listeners ---
+    function attachAnalysisListener() {
+      if (analysisUnsubscribe) analysisUnsubscribe();
+      const analysisCollectionPath = `artifacts/${appId}/public/data/analysisQueue`;
+      const q = query(
+        collection(db, analysisCollectionPath),
+        where("status", "==", "pending_review")
+        // No orderBy('createdAt') to avoid needing a composite index
+      );
+      analysisUnsubscribe = onSnapshot(q, (querySnapshot) => {
+        const queue = [];
+        querySnapshot.forEach((doc) => {
+          queue.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort manually in JavaScript
+        queue.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+        setState({ analysisQueue: queue });
+      }, (err) => {
+        console.error("Error listening to analysis queue:", err);
+        renderError("Failed to load analysis queue.");
+      });
+    }
+
+    function attachAppointmentsListener(userId, userRole) {
+      if (appointmentsUnsubscribe) appointmentsUnsubscribe();
+      const appointmentsCollectionPath = `artifacts/${appId}/appointments`;
+      
+      const roleField = userRole === 'patient' ? 'patientId' : 'doctorId';
+      
+      const q = query(
+        collection(db, appointmentsCollectionPath),
+        where(roleField, "==", userId)
+        // No orderBy('createdAt') to avoid needing a composite index
+      );
+      
+      appointmentsUnsubscribe = onSnapshot(q, (querySnapshot) => {
+        const appts = [];
+        querySnapshot.forEach((doc) => {
+          appts.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort manually in JavaScript
+        appts.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+        setState({ appointments: appts });
+      }, (err) => {
+        console.error("Error listening to appointments:", err);
+        renderError("Failed to load appointments.");
+      });
+    }
+    
+    function attachNotificationsListener(userId) {
+      if (notificationsUnsubscribe) notificationsUnsubscribe();
+      const notificationsCollectionPath = `artifacts/${appId}/notifications`;
+      const q = query(
+        collection(db, notificationsCollectionPath),
+        where("patientId", "==", userId)
+        // No orderBy('createdAt') to avoid needing a composite index
+      );
+      notificationsUnsubscribe = onSnapshot(q, (querySnapshot) => {
+        const notifs = [];
+        querySnapshot.forEach((doc) => {
+          notifs.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort manually in JavaScript
+        notifs.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+        setState({ notifications: notifs });
+      }, (err) => {
+        console.error("Error listening to notifications:", err);
+        renderError("Failed to load notifications.");
+      });
+    }
+
+    // --- Fetch Patient Records (one-time) ---
+    async function fetchPatientRecords() {
+      if (!appState.userId) return;
+      setState({ isLoading: true });
+      const analysisCollectionPath = `artifacts/${appId}/public/data/analysisQueue`;
+      const q = query(
+        collection(db, analysisCollectionPath),
+        where("patientId", "==", appState.userId)
+        // No orderBy('createdAt') to avoid needing a composite index
+      );
+      try {
+        const querySnapshot = await getDocs(q);
+        const records = [];
+        querySnapshot.forEach((doc) => {
+          records.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort manually in JavaScript
+        records.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+        setState({ patientRecords: records, isLoading: false });
+      } catch (err) {
+        console.error("Error fetching patient records:", err);
+        renderError("Failed to load your medical records.");
+      }
+    }
+    
+    // --- Fetch Doctors (one-time) ---
+    async function fetchDoctors() {
+      setState({ isLoading: true });
+      const publicProfilesPath = `artifacts/${appId}/public_profiles`;
+      const q = query(
+        collection(db, publicProfilesPath),
+        where("isPublic", "==", true)
+      );
+      try {
+        const querySnapshot = await getDocs(q);
+        const doctorList = [];
+        querySnapshot.forEach((doc) => {
+          doctorList.push({ id: doc.id, ...doc.data() });
+        });
+        setState({ doctors: doctorList, isLoading: false });
+      } catch (err) {
+        console.error("Error fetching doctors:", err);
+        renderError("Failed to load doctor list.");
+      }
+    }
+    
+    // --- Navigation functions ---
+    function navigateToDashboard() { setState({ view: appState.userRole }); }
+    async function navigateToMyRecords() {
+      await fetchPatientRecords();
+      setState({ view: 'my_records' });
+    }
+    function navigateToMyProfile() { setState({ view: 'my_profile' }); }
+    async function navigateToFindDoctor() {
+      await fetchDoctors();
+      setState({ view: 'find_doctor' });
+    }
+    function navigateToMyAppointments() { setState({ view: 'my_appointments' }); }
+
+    // --- Main Workflows ---
+    
+    // --- Speech recognition: cross-browser support and language mapping ---
+    let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    let recognition = null;
+
+    const _speechLangMap = {
+      en: 'en-US',
+      hi: 'hi-IN',
+      kn: 'kn-IN'
+    };
+
+    // Use a small stable wrapper around Web Speech API to avoid duplicated transcripts
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      // default language — will be updated on start based on appState.language
+      recognition.lang = _speechLangMap[appState.language] || 'en-US';
+
+      // internal buffer to hold committed (final) transcript
+      recognition._finalBuffer = '';
+
+      recognition.onstart = () => {
+        // When recording starts, clear the final buffer and mark recording state
+        recognition._finalBuffer = '';
+        setState({ isRecording: true });
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        // collect only newly-finalized results into the final buffer
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcript = event.results[i][0].transcript || '';
+          if (event.results[i].isFinal) {
+            // append finalized text to buffer with a space separator
+            recognition._finalBuffer += (recognition._finalBuffer ? ' ' : '') + transcript.trim();
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        const symptomsTextarea = document.getElementById('symptoms');
+        if (symptomsTextarea) {
+          // Show committed final buffer plus interim while recording
+          const combined = (recognition._finalBuffer || '') + (interimTranscript ? (' ' + interimTranscript.trim()) : '');
+          symptomsTextarea.value = combined.trim();
+          // Only persist the committed final text to app state during recording to avoid duplicates
+          setState({ symptoms: recognition._finalBuffer });
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        setState({ isRecording: false });
+        renderError(`Speech recognition error: ${event.error}`);
+      };
+
+      recognition.onend = () => {
+        // When recognition ends, commit final buffer to the symptoms field
+        const symptomsTextarea = document.getElementById('symptoms');
+        const finalText = (recognition._finalBuffer || '').trim();
+        if (symptomsTextarea) {
+          symptomsTextarea.value = finalText;
+        }
+        setState({ isRecording: false, symptoms: finalText });
+      };
+    }
+
+    function handleVoiceInput() {
+      // If Web Speech API not available, surface an informative error
+      if (!recognition) {
+        renderError("Speech recognition not supported in this browser. Please use Chrome, Edge, or a supported Chromium browser.");
+        return;
+      }
+
+      // Toggle recording on button press
+      if (appState.isRecording) {
+        try {
+          recognition.stop();
+        } catch (err) {
+          console.warn('stop() error', err);
+          setState({ isRecording: false });
+        }
+        return;
+      }
+
+      // Set language based on UI selection (fallback to en-US)
+      const mapped = _speechLangMap[appState.language] || 'en-US';
+      try {
+        recognition.lang = mapped;
+      } catch (err) {
+        console.warn('Failed to set recognition.lang', err);
+      }
+
+      // Clear previous symptoms and start fresh buffer
+      setState({ symptoms: '' });
+      recognition._finalBuffer = '';
+      try {
+        recognition.start();
+      } catch (err) {
+        // some browsers throw if start called rapidly; surface the error
+        console.error('recognition.start() failed', err);
+        renderError('Unable to start speech recognition. Check microphone permissions.');
+        setState({ isRecording: false });
+      }
+    }
+
+    async function handleSubmit(symptoms, imageFile) {
+      // Treat whitespace-only input as empty
+      const hasText = !!(symptoms && String(symptoms).trim());
+      if (!hasText && !imageFile) {
+        renderError("Please describe symptoms or upload an image.");
+        return;
+      }
+      setState({ isLoading: true, error: null });
+      try {
+        let imageUrl = ''; let imageName = '';
+
+        // Fast path: create a Firestore doc immediately using text-only assessment
+        const initialAiObj = await getAIAssessment(symptoms, null);
+        const initialAnalysisData = {
+          symptoms: symptoms,
+          imageUrl: '',
+          imageName: imageFile ? imageFile.name : '',
+          status: 'pending_review',
+          imageUploadStatus: imageFile ? 'pending' : 'none',
+          patientId: appState.userId || 'unknown',
+          patientEmail: appState.user?.email || '',
+          createdAt: new Date(),
+          aiAnalysis: JSON.stringify(initialAiObj),
+        };
+
+        const analysisCollectionPath = `artifacts/${appId}/public/data/analysisQueue`;
+        const docRef = await addDoc(collection(db, analysisCollectionPath), initialAnalysisData);
+
+        // Immediately update UI so user sees a fast response
+        setState({ isLoading: false, symptoms: '', imageFile: null, imagePreview: null });
+
+        // If there is an image, compress and upload in background, then update the doc with image URL and refined analysis
+        if (imageFile) {
+          // client-side compression to speed upload
+          try {
+            const compressed = await compressImage(imageFile, 1024, 0.7);
+            const uid = appState.userId || 'anonymous';
+            const storagePath = `artifacts/${appId}/user_uploads/${uid}/${Date.now()}_${imageFile.name}`;
+            const imageRef = ref(storage, storagePath);
+            const snapshot = await uploadBytes(imageRef, compressed);
+            imageUrl = await getDownloadURL(snapshot.ref);
+            imageName = imageFile.name;
+
+            // Re-run assessment including image URL (so imageIncluded will be true)
+            const refinedAiObj = await getAIAssessment(symptoms, imageUrl);
+
+            // Update the Firestore document with imageUrl and new aiAnalysis
+            const docPath = `${analysisCollectionPath}/${docRef.id}`;
+            await updateDoc(doc(db, docPath), {
+              imageUrl: imageUrl,
+              imageName: imageName,
+              aiAnalysis: JSON.stringify(refinedAiObj),
+              imageUploadStatus: 'done'
+            });
+
+            // Show a subtle success message (non-blocking)
+            const msg = document.createElement('div');
+            msg.className = 'fixed top-5 right-5 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg z-50 shadow-lg';
+            msg.textContent = 'Image uploaded and analysis updated.';
+            appRoot.appendChild(msg);
+            setTimeout(() => msg.remove(), 3000);
+          } catch (uploadErr) {
+            console.error('Background image upload failed:', uploadErr);
+            const docPath = `${analysisCollectionPath}/${docRef.id}`;
+            await updateDoc(doc(db, docPath), { imageUploadStatus: 'failed' });
+            // notify user but do not block
+            renderError('Image upload failed in background. The text analysis was saved.');
+          }
+        }
+        
+      } catch (err) {
+        console.error("Error submitting analysis:", err);
+        // Ensure loading state is cleared on errors so UI doesn't stay stuck
+        setState({ isLoading: false });
+        renderError(`Failed to submit analysis: ${err.message}`);
+      }
+    }
+
+    // Compress image client-side using canvas to speed uploads
+    function compressImage(file, maxDim = 1024, quality = 0.7) {
+      return new Promise((resolve, reject) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              const ratio = width / height;
+              if (ratio > 1) { // landscape
+                width = maxDim; height = Math.round(maxDim / ratio);
+              } else { // portrait
+                height = maxDim; width = Math.round(maxDim * ratio);
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+              if (!blob) return reject(new Error('Compression failed'));
+              // Convert blob to File so Firebase metadata like name can be preserved
+              const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+              resolve(compressedFile);
+            }, 'image/jpeg', quality);
+          };
+          img.onerror = (e) => reject(e);
+          // Read file as data URL
+          const reader = new FileReader();
+          reader.onload = (ev) => { img.src = ev.target.result; };
+          reader.onerror = (e) => reject(e);
+          reader.readAsDataURL(file);
+        } catch (e) { reject(e); }
+      });
+    }
+
+    async function getAIAssessment(text, imageUrl) {
+      // Deterministic, conservative symptom-to-condition helper.
+      // NOTE: This is NOT a medical diagnosis. It only summarizes the provided input
+      // and suggests possible considerations. Do not fabricate symptoms — only use user input.
+      const raw = String(text || '').trim();
+      const lower = raw.toLowerCase();
+
+      // Basic cleanup: remove filler words and normalize punctuation
+      const fillers = ['\bum\b', '\buh\b', '\blike\b', 'you know', '\bso\b', '\bactually\b', '\bbasically\b', '\bright\b', '\bokay\b'];
+      let cleaned = lower.replace(/[\u2019']/g, "'");
+      fillers.forEach(f => { cleaned = cleaned.replace(new RegExp(f, 'gi'), ' '); });
+
+      // Common expansions
+      const expansions = {
+        '\\btemp\\b': 'fever',
+        '\\bbp\\b': 'blood pressure',
+        '\\bhr\\b': 'heart rate',
+        '\\bsob\\b': 'shortness of breath',
+        '\\bfev\\b': 'fever'
+      };
+      Object.keys(expansions).forEach(k => { cleaned = cleaned.replace(new RegExp(k, 'g'), expansions[k]); });
+
+      // Extract durations like '2 days', 'three days', '24 hours'
+      let duration = null;
+      const durMatch = cleaned.match(/(\d+\s*(?:day|days|week|weeks|hour|hours))/i);
+      if (durMatch) duration = durMatch[1];
+
+      // Symptom lexicon and synonyms
+      const symptomKeywords = {
+        fever: ['fever', 'temperature', 'febrile'],
+        cough: ['cough', 'coughing'],
+        cold: ['cold', 'sneeze', 'sneezing', 'runny'],
+        sore_throat: ['sore throat', 'throat pain', 'throat hurts'],
+        headache: ['headache', 'head pain', 'migraine'],
+        chest_pain: ['chest pain', 'chest hurts', 'pressure in chest'],
+        shortness_breath: ['shortness of breath', 'sob', 'difficulty breathing', 'breathless'],
+        nausea: ['nausea', 'nauseous', 'vomit', 'vomiting'],
+        diarrhea: ['diarrhea', 'loose stool', 'runny stool'],
+        rash: ['rash', 'itch', 'itching', 'red patch', 'redness', 'hives'],
+        swelling: ['swelling', 'swollen'],
+        dizziness: ['dizzy', 'dizziness', 'lightheaded'],
+        fatigue: ['fatigue', 'tired', 'exhausted', 'lethargy'],
+        anosmia: ['loss of smell', 'no smell', 'anosmia'],
+        ageusia: ['loss of taste', 'no taste', 'ageusia'],
+        abdominal_pain: ['stomach pain', 'abdominal pain', 'belly pain']
+      };
+
+      const found = [];
+      Object.entries(symptomKeywords).forEach(([key, variations]) => {
+        variations.forEach(v => {
+          if (cleaned.includes(v)) {
+            if (!found.includes(key)) found.push(key);
+          }
+        });
+      });
+
+      // Build a readable list of extracted symptoms
+      const extractedSymptoms = found.slice();
+
+      // Heuristic rules for condition suggestion
+      let topCondition = 'Non-specific symptoms';
+      let confidence = 'Low';
+      let severity = 'Low';
+      let recommendedAction = 'Monitor symptoms and consult a healthcare provider if they worsen or persist.';
+
+      const has = (k) => extractedSymptoms.includes(k);
+
+      if (has('chest_pain')) {
+        topCondition = 'Chest pain — possible cardiac or pulmonary cause';
+        confidence = 'High'; severity = 'High';
+        recommendedAction = 'Seek immediate medical attention (ER) for chest pain.';
+      } else if (has('shortness_breath')) {
+        topCondition = 'Shortness of breath — respiratory concern';
+        confidence = 'High'; severity = 'High';
+        recommendedAction = 'If severe, seek urgent care. Otherwise contact your healthcare provider promptly.';
+      } else if (has('fever') && (has('cough') || has('sore_throat') || has('cold'))) {
+        topCondition = 'Likely acute respiratory infection (fever with cough/sore throat)';
+        confidence = 'Medium'; severity = 'Low';
+        recommendedAction = 'Rest, fluids, symptomatic care; contact provider if high fever, worsening, or risk factors.';
+      } else if (has('fever') && (has('fatigue') || has('headache') || has('body_ache'))) {
+        topCondition = 'Influenza-like illness';
+        confidence = 'Medium'; severity = 'Medium';
+        recommendedAction = 'Consider testing and supportive care; consult provider if high risk.';
+      } else if (has('nausea') || has('diarrhea')) {
+        topCondition = 'Gastrointestinal illness';
+        confidence = 'Medium'; severity = 'Low';
+        recommendedAction = 'Hydration and symptomatic care; seek care if severe or persistent.';
+      } else if (has('rash') || has('swelling')) {
+        topCondition = 'Skin condition (rash/dermatitis)';
+        confidence = 'Medium'; severity = 'Low';
+        recommendedAction = 'Avoid irritants; seek dermatology or primary care if spreading or signs of infection.';
+      } else if (extractedSymptoms.length > 0) {
+        topCondition = 'Symptoms: ' + extractedSymptoms.join(', ');
+        confidence = 'Low'; severity = 'Low';
+        recommendedAction = 'Provide more details (onset, duration, severity) or consult a clinician for evaluation.';
+      } else if (String(text || '').trim()) {
+        // If no keyword match but text exists, echo a suggestion to provide more detail
+        topCondition = 'Free-text symptoms provided';
+        confidence = 'Low'; severity = 'Low';
+        recommendedAction = 'Provide concise symptom keywords or consult a clinician for interpretation.';
+      }
+
+      // If image provided and skin-related keywords present, raise confidence
+      const imageIncluded = !!imageUrl;
+      if (imageIncluded && has('rash')) {
+        confidence = (confidence === 'Low') ? 'Medium' : (confidence === 'Medium' ? 'High' : confidence);
+      }
+
+      const durationNote = duration ? `Duration: ${duration}. ` : '';
+      const preliminaryAnalysis = `${durationNote}${topCondition}. Suggested action: ${recommendedAction}`;
+
+      return {
+        preliminaryAnalysis,
+        topCondition,
+        confidence,
+        severity,
+        recommendedAction,
+        inputTextNormalized: cleaned.replace(/\s+/g, ' ').trim(),
+        extractedSymptoms,
+        duration: duration || '',
+        imageIncluded,
+        disclaimer: 'This is a preliminary, non-diagnostic summary generated from user-provided information. Consult a healthcare professional for diagnosis.'
+      };
+    }
+
+    async function handleMarkAsReviewed(caseId, patientId, doctorNote) {
+      setState({ isLoading: true });
+      try {
+        // 1. Update the case status
+        const docPath = `artifacts/${appId}/public/data/analysisQueue/${caseId}`;
+        const caseRef = doc(db, docPath);
+        await updateDoc(caseRef, { 
+          status: 'reviewed',
+          reviewedBy: appState.userId,
+          reviewedAt: new Date(),
+          doctorNote: doctorNote
+        });
+        
+        // 2. Create a notification for the patient
+        if (doctorNote && patientId && patientId !== 'guest') { // Don't notify guests
+          const notifCollectionPath = `artifacts/${appId}/notifications`;
+          await addDoc(collection(db, notifCollectionPath), {
+            patientId: patientId,
+            doctorId: appState.userId,
+            doctorName: (appState.userProfile && appState.userProfile.firstName) ? `${appState.userProfile.firstName} ${appState.userProfile.lastName}` : appState.user.email,
+            message: doctorNote,
+            caseId: caseId,
+            status: 'unread',
+            createdAt: new Date()
+          });
+        }
+        
+        setState({ isLoading: false });
+        const modal = document.getElementById('caseReviewModal');
+        if (modal) {
+          modal.remove();
+        }
+      } catch (err) {
+        console.error("Error updating document:", err);
+        renderError("Failed to mark as reviewed.");
+      }
+    }
+    
+    function handleReview(caseItem) {
+      const existingModal = document.getElementById('caseReviewModal');
+      if (existingModal) existingModal.remove();
+      appRoot.appendChild(createCaseReviewModal(caseItem, handleMarkAsReviewed));
+    }
+    
+    async function handleRequestAppointment(doctor) {
+      setState({ isLoading: true });
+      // FIX: Use fallback for patient name if profile is not set or loaded
+      const patientName = (appState.userProfile && appState.userProfile.firstName)
+        ? `${appState.userProfile.firstName} ${appState.userProfile.lastName}`
+        : appState.user.email; // Fallback to email
+        
+      if (!patientName) {
+        renderError("Could not find patient name. Please log in again.");
+        return;
+      }
+        
+      const doctorName = `${doctor.firstName} ${doctor.lastName}`;
+      const apptData = {
+        patientId: appState.userId,
+        patientName: patientName,
+        doctorId: doctor.id,
+        doctorName: doctorName,
+        status: 'pending',
+        createdAt: new Date()
+      };
+      
+      try {
+        const apptCollectionPath = `artifacts/${appId}/appointments`;
+        await addDoc(collection(db, apptCollectionPath), apptData);
+        setState({ isLoading: false, view: 'my_appointments' });
+      } catch (err) {
+        console.error("Error requesting appointment:", err);
+        renderError("Failed to request appointment.");
+      }
+    }
+    
+    async function handleUpdateAppointmentStatus(apptId, newStatus) {
+      setState({ isLoading: true });
+      try {
+        const apptDocPath = `artifacts/${appId}/appointments/${apptId}`;
+        await updateDoc(doc(db, apptDocPath), { status: newStatus });
+        setState({ isLoading: false });
+      } catch (err) {
+        console.error("Error updating appointment:", err);
+        renderError("Failed to update appointment.");
+      }
+    }
+    
+    async function handleMarkNotificationAsRead(notifId) {
+      try {
+        const notifDocPath = `artifacts/${appId}/notifications/${notifId}`;
+        await updateDoc(doc(db, notifDocPath), { status: 'read' });
+        // Optimistic update in UI
+        setState({
+          notifications: appState.notifications.map(n => 
+            n.id === notifId ? { ...n, status: 'read' } : n
+          )
+        });
+      } catch (err) {
+        console.error("Error marking notification as read:", err);
+        renderError("Failed to update notification.");
+      }
+    }
+    
+    // --- NEW FUNCTION: Submit Chatbot Inquiry to Firebase ---
+    async function submitChatInquiryToFirebase(messageText) {
+      try {
+        const analysisCollectionPath = `artifacts/${appId}/public/data/analysisQueue`;
+        
+        // Prepare a "dummy" AI analysis object to make it render nicely in the queue
+        const aiAnalysis = JSON.stringify({
+          topCondition: "Chatbot Inquiry",
+          severity: "Low",
+          confidence: "N/A",
+          recommendedAction: "Respond to user's question.",
+          disclaimer: "This query originated from the chatbot 'Others...' option."
+        });
+
+        const inquiryData = {
+          symptoms: `[Chatbot Inquiry] ${messageText}`, // Use 'symptoms' field for consistency
+          status: 'pending_review',
+          patientId: appState.userId, // This is now checked to not be null
+          patientEmail: appState.user.email, // This is now checked to not be null
+          createdAt: new Date(),
+          aiAnalysis: aiAnalysis,
+          imageUrl: '', // No image
+          imageName: ''
+        };
+        
+        await addDoc(collection(db, analysisCollectionPath), inquiryData);
+        
+        // No need to show loading, it's a background task.
+        // A success message is already shown by the bot.
+      
+      } catch (err) {
+        console.error("Error submitting chat inquiry:", err);
+        // Optionally, tell the user it failed
+        appendBotMessage("Sorry, I couldn't send your message. Please try again later.");
+        renderOptions(backOptions); // Show back button on failure
+      }
+    }
+    // --- Expose function to global scope for chatbot script ---
+    window.submitChatInquiryToFirebase = submitChatInquiryToFirebase;
+
+
+    // --- UI Component Builders (HTML-in-JS) ---
+    
+    function createLoginScreen() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-400 to-blue-600 p-6";
+      let email = '';
+      let password = '';
+      let selectedRole = 'doctor';
+      let authMode = 'role_selection';
+      let isRegistering = false;
+      
+      const container = document.createElement('div');
+      // responsive: stack on small screens, row on md+
+      container.className = "w-full max-w-4xl flex flex-col md:flex-row bg-white rounded-2xl shadow-2xl overflow-hidden";
+      
+      // Left static panel
+      container.innerHTML = `
+        <div class="w-1/2 p-12 flex-col justify-center text-white bg-gradient-to-br from-blue-600 to-teal-500 hidden md:flex">
+          <div class="flex items-center space-x-2 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18H3c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2h4v12H5z"/><path d="M19 18h2c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-4v12h2z"/><path d="M12 22a2.5 2.5 0 0 1-2.5-2.5V1.5A2.5 2.5 0 0 1 12 4a2.5 2.5 0 0 1 2.5 2.5v15A2.5 2.5 0 0 1 12 22z"/></svg>
+            <span class="text-3xl font-bold">${t('app_name')}</span>
+          </div>
+          <h1 class="text-4xl font-bold mb-3">${t('login_headline')}</h1>
+          <p class="text-lg text-blue-100 mb-8">
+            ${t('login_subheadline')}
+          </p>
+        </div>
+      `;
+      
+      // Right dynamic panel
+      const rightSide = document.createElement('div');
+      rightSide.className = "w-full md:w-1/2 p-12 bg-gray-50 flex flex-col justify-center";
+      const formContainer = document.createElement('div');
+      
+      function renderForm() {
+        formContainer.innerHTML = '';
+        let title, subtitle;
+        
+        if (authMode !== 'role_selection') {
+          formContainer.innerHTML = `
+            <button id="backButton" class="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-800 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              <span>${t('back_to_role_selection')}</span>
+            </button>
+          `;
+        }
+        
+        if (authMode === 'role_selection') {
+          title = t('welcome_back');
+          subtitle = t('choose_role');
+          formContainer.innerHTML += `
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">${title}</h2>
+            <p class="text-gray-600 mb-8">${subtitle}</p>
+            <div class="space-y-4">
+              <button id="patientRole" class="w-full flex items-center p-6 border-2 border-gray-200 rounded-lg shadow-sm hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+                <span class="text-xl font-semibold text-gray-700 ml-4">${t('patient')}</span>
+              </button>
+              <button id="doctorRole" class="w-full flex items-center p-6 border-2 border-gray-200 rounded-lg shadow-sm hover:border-teal-500 hover:bg-teal-50 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-teal-600"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                <span class="text-xl font-semibold text-gray-700 ml-4">${t('doctor')}</span>
+              </button>
+              <button id="internRole" class="w-full flex items-center p-6 border-2 border-gray-200 rounded-lg shadow-sm hover:border-purple-500 hover:bg-purple-50 transition-colors">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                <span class="text-xl font-semibold text-gray-700 ml-4">${t('intern')}</span>
+              </button>
+            </div>
+          `;
+          formContainer.querySelector('#patientRole').addEventListener('click', () => { authMode = 'patient_auth'; isRegistering = false; renderForm(); });
+          formContainer.querySelector('#doctorRole').addEventListener('click', () => { authMode = 'pro_auth'; isRegistering = false; selectedRole = 'doctor'; renderForm(); });
+          formContainer.querySelector('#internRole').addEventListener('click', () => { authMode = 'pro_auth'; isRegistering = false; selectedRole = 'intern'; renderForm(); });
+        } else {
+          let buttonText, footerText, footerLinkText;
+          if (authMode === 'patient_auth') {
+            title = isRegistering ? t('create_patient_account') : t('welcome_back_patient');
+            subtitle = isRegistering ? t('register_patient_text') : t('login_patient_text');
+          } else {
+            title = isRegistering ? t('professional_registration') : t('professional_login');
+            subtitle = isRegistering ? t('register_pro_text') : t('login_pro_text');
+          }
+          
+          buttonText = isRegistering ? t('register') : t('sign_in');
+          footerText = isRegistering ? t('already_have_account') : t('dont_have_account');
+          footerLinkText = isRegistering ? t('sign_in') : t('register');
+          
+          formContainer.innerHTML += `
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">${title}</h2>
+            <p class="text-gray-600 mb-8">${subtitle}</p>
+            <form id="authForm">
+              <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-semibold mb-2" for="email">${t('email')}</label>
+                <input type="email" id="email" placeholder="you@example.com" value="${email}" class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              </div>
+              <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-semibold mb-2" for="password">${t('password')}</label>
+                <input type="password" id="password" placeholder="••••••••" value="${password}" class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                ${!isRegistering ? `<a href="#" class="text-sm text-blue-600 hover:underline float-right mt-2">${t('forgot_password')}</a>` : ''}
+              </div>
+              ${(authMode === 'pro_auth' && isRegistering) ? `
+                <div class="mb-6">
+                  <label class="block text-gray-700 text-sm font-semibold mb-2" for="role">${t('your_role')}</label>
+                  <select id="role" class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="doctor" ${selectedRole === 'doctor' ? 'selected' : ''}>${t('doctor')}</option>
+                    <option value="intern" ${selectedRole === 'intern' ? 'selected' : ''}>${t('intern')}</option>
+                  </select>
+                </div>
+              ` : ''}
+              <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-transform transform hover:scale-105">${buttonText}</button>
+              <p class="text-center text-sm text-gray-600 mt-6">
+                ${footerText}
+                <button type="button" id="toggleMode" class="font-semibold text-blue-600 hover:underline">${footerLinkText}</button>
+              </p>
+            </form>
+          `;
+          
+          formContainer.querySelector('#authForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (isRegistering) {
+              const roleToRegister = authMode === 'patient_auth' ? 'patient' : selectedRole;
+              handleRegister(email, password, roleToRegister);
+            } else {
+              handleLogin(email, password);
+            }
+          });
+          
+          formContainer.querySelector('#email').addEventListener('input', (e) => email = e.target.value);
+          formContainer.querySelector('#password').addEventListener('input', (e) => password = e.target.value);
+          if (authMode === 'pro_auth' && isRegistering) {
+            formContainer.querySelector('#role').addEventListener('change', (e) => selectedRole = e.target.value);
+          }
+          formContainer.querySelector('#toggleMode').addEventListener('click', () => { isRegistering = !isRegistering; renderForm(); });
+        }
+        
+        const backButton = formContainer.querySelector('#backButton');
+        if (backButton) {
+          backButton.addEventListener('click', () => { authMode = 'role_selection'; renderForm(); });
+        }
+      }
+      
+      renderForm();
+      rightSide.appendChild(formContainer);
+      container.appendChild(rightSide);
+      el.appendChild(container);
+      return el;
+    }
+
+    function createAppHeader() {
+      const el = document.createElement('header');
+      el.className = "bg-white shadow-md sticky top-0 z-10";
+      
+      const { user, userRole, userProfile, notifications } = appState;
+      const displayName = (userProfile && userProfile.firstName) 
+        ? `${userProfile.firstName} ${userProfile.lastName}` 
+        : (user?.email || 'User');
+      const initials = (userProfile && userProfile.firstName && userProfile.firstName.length > 0)
+        ? `${userProfile.firstName[0]}${userProfile.lastName?.[0] || ''}`.toUpperCase()
+        : displayName.substring(0, 2).toUpperCase();
+      
+      const unreadNotifs = notifications.filter(n => n.status === 'unread');
+      
+      el.innerHTML = `
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+          <div class="flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-teal-500"><path d="M5 18H3c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2h4v12H5z"/><path d="M19 18h2c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-4v12h2z"/><path d="M12 22a2.5 2.5 0 0 1-2.5-2.5V1.5A2.5 2.5 0 0 1 12 4a2.5 2.5 0 0 1 2.5 2.5v15A2.5 2.5 0 0 1 12 22z"/></svg>
+            <span class="text-2xl font-bold text-gray-700">${t('app_name')}</span>
+          </div>
+          <div class="flex items-center space-x-6">
+            <!-- Language Switcher -->
+            <div class="relative">
+              <button id="language-switcher-button" class="flex items-center text-gray-600 hover:text-blue-600 font-medium">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span>${appState.language.toUpperCase()}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-1"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div id="language-dropdown" class="hidden absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-xl overflow-hidden z-20">
+                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-lang="en">English</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-lang="kn">ಕನ್ನಡ (Kannada)</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-lang="hi">हिन्दी (Hindi)</a>
+              </div>
+            </div>
+            
+            <!-- Navigation Links -->
+            <button id="dashboardLink" class="text-gray-600 hover:text-blue-600 font-medium">${t('dashboard')}</button>
+            ${userRole === 'patient' ? `<button id="myRecordsLink" class="text-gray-600 hover:text-blue-600 font-medium">${t('my_records')}</button>` : ''}
+            ${userRole === 'patient' ? `<button id="findDoctorLink" class="text-gray-600 hover:text-blue-600 font-medium">${t('find_a_doctor')}</button>` : ''}
+            <button id="myAppointmentsLink" class="text-gray-600 hover:text-blue-600 font-medium">${t('my_appointments')}</button>
+            <button id="myProfileLink" class="text-gray-600 hover:text-blue-600 font-medium">${t('my_profile')}</button>
+            
+            <!-- Notification Bell -->
+            ${userRole === 'patient' ? `
+            <div class="relative">
+              <button id="notification-bell" class="text-gray-500 hover:text-gray-700 relative">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                ${unreadNotifs.length > 0 ? `<span id="notification-dot" class="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>` : ''}
+              </button>
+              <div id="notification-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl overflow-hidden z-20">
+                <div class="p-4 font-semibold border-b">${t('notifications')}</div>
+                <div id="notification-list" class="max-h-64 overflow-y-auto">
+                  ${unreadNotifs.length === 0 ? `<p class="text-gray-500 text-sm p-4">${t('no_new_notifications')}</p>` :
+                    unreadNotifs.map(notif => `
+                      <div class="p-4 border-b border-gray-100 hover:bg-gray-50">
+                        <p class="font-semibold text-gray-800">${t('reply_from')} ${notif.doctorName}</p>
+                        <p class="text-gray-600 text-sm truncate">${notif.message}</p>
+                        <button class="text-blue-600 text-sm font-medium mt-1" data-notif-id="${notif.id}">${t('view_and_mark_as_read')}</button>
+                      </div>
+                    `).join('')
+                  }
+                </div>
+              </div>
+            </div>
+            ` : `
+            <!-- Placeholder for non-patients to maintain layout -->
+            <div class="relative w-6 h-6"></div> 
+            `}
+            
+            <!-- User Profile -->
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                ${initials}
+              </div>
+              <span class="font-semibold text-gray-700 hidden md:inline">${displayName}</span>
+              <button id="logoutButton" class="ml-2 text-gray-500 hover:text-red-600" title="${t('log_out')}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </button>
+            </div>
+          </div>
+        </nav>
+      `;
+      
+      // --- Event Listeners for Header ---
+      
+      el.querySelector('#logoutButton').addEventListener('click', handleLogout);
+      el.querySelector('#dashboardLink').addEventListener('click', navigateToDashboard);
+      el.querySelector('#myProfileLink').addEventListener('click', navigateToMyProfile);
+      el.querySelector('#myAppointmentsLink').addEventListener('click', navigateToMyAppointments);
+      
+      // Language switcher logic
+      const langButton = el.querySelector('#language-switcher-button');
+      const langDropdown = el.querySelector('#language-dropdown');
+      langButton.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent body click from closing it immediately
+        langDropdown.classList.toggle('hidden');
+      });
+      langDropdown.addEventListener('click', (e) => {
+        e.preventDefault();
+        const lang = e.target.dataset.lang;
+        if (lang) {
+          setLanguage(lang);
+          langDropdown.classList.add('hidden');
+        }
+      });
+      
+      // Patient-specific links and notifications
+      if (userRole === 'patient') {
+        el.querySelector('#myRecordsLink').addEventListener('click', navigateToMyRecords);
+        el.querySelector('#findDoctorLink').addEventListener('click', navigateToFindDoctor);
+        
+        const bell = el.querySelector('#notification-bell');
+        const dropdown = el.querySelector('#notification-dropdown');
+        bell.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent body click from closing it immediately
+          dropdown.classList.toggle('hidden');
+        });
+        
+        dropdown.addEventListener('click', (e) => {
+          const button = e.target.closest('button[data-notif-id]');
+          if (button) {
+            handleMarkNotificationAsRead(button.dataset.notifId);
+            dropdown.classList.add('hidden');
+          }
+        });
+      }
+      
+      // Global click listener to close dropdowns
+      // We must add this to the body, not the element, to catch clicks outside
+      document.body.addEventListener('click', (e) => {
+        if (langButton && langDropdown && !langButton.contains(e.target) && !langDropdown.contains(e.target)) {
+          langDropdown.classList.add('hidden');
+        }
+        const notifBell = el.querySelector('#notification-bell');
+        const notifDropdown = el.querySelector('#notification-dropdown');
+        if (notifBell && notifDropdown && !notifBell.contains(e.target) && !notifDropdown.contains(e.target)) {
+          notifDropdown.classList.add('hidden');
+        }
+      }, { once: false }); // Ensure it's not a one-time listener
+      
+      return el;
+    }
+    
+    function createPatientDashboard() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-5xl mx-auto";
+      
+      let activeTab = 'describe';
+      let symptoms = appState.symptoms;
+      let imageFile = appState.imageFile;
+      let imagePreview = appState.imagePreview;
+      let isRecording = appState.isRecording;
+      
+      function renderPatientForm() {
+        container.innerHTML = `
+          <h2 class="text-3xl font-bold text-gray-800 mb-8">${t('ai_symptom_checker')}</h2>
+          
+          <!-- Voice Input Section -->
+          <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">${t('voice_to_text')}</h3>
+            <p class="text-gray-600 mb-4">${t('voice_to_text_desc')}</p>
+            <button id="startRecordingButton" ${recognition ? '' : 'disabled'} class="flex items-center space-x-2 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-teal-500 hover:bg-teal-600'} ${!recognition ? 'opacity-50 cursor-not-allowed' : ''} text-white px-5 py-3 rounded-lg font-semibold transition-colors relative">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              ${isRecording ? '<span class="w-3 h-3 bg-white rounded-full animate-ping absolute h-full w-full opacity-75"></span>' : ''}
+              <span>${isRecording ? 'Stop Recording' : t('start_recording')}</span>
+            </button>
+            ${!recognition ? `<p class="text-sm text-red-600 mt-2">Speech recognition is not supported in this browser.</p>` : ''}
+          </div>
+          
+          <!-- Text/Image Input Section -->
+          <div class="bg-white rounded-lg shadow-lg">
+            <div class="flex border-b border-gray-200">
+              <button id="tabDescribe" class="flex-1 flex items-center justify-center space-x-2 py-4 px-6 font-semibold transition-colors ${activeTab === 'describe' ? 'border-b-4 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+                <span>${t('describe_symptoms')}</span>
+              </button>
+              <button id="tabUpload" class="flex-1 flex items-center justify-center space-x-2 py-4 px-6 font-semibold transition-colors ${activeTab === 'upload' ? 'border-b-4 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                <span>${t('upload_images')}</span>
+              </button>
+            </div>
+            
+            <div class="p-8">
+              <form id="symptomForm">
+                <div id="formContent"></div>
+                <button type="submit" class="w-full mt-8 bg-blue-600 text-white text-lg font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
+                  ${t('submit_for_ai_analysis')}
+                </button>
+              </form>
+            </div>
+          </div>
+        `;
+        
+        const formContent = container.querySelector('#formContent');
+        if (activeTab === 'describe') {
+          formContent.innerHTML = `
+            <div>
+              <label for="symptoms" class="block text-lg font-medium text-gray-700 mb-3">${t('describe_symptoms_label')}</label>
+              <textarea id="symptoms" rows="5" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="${t('describe_symptoms_placeholder')}"
+              >${symptoms}</textarea>
+            </div>
+          `;
+          container.querySelector('#symptoms').addEventListener('input', (e) => symptoms = e.target.value);
+        }
+        if (activeTab === 'upload') {
+          formContent.innerHTML = `
+            <div>
+              <label for="image" class="block text-lg font-medium text-gray-700 mb-3">${t('upload_images_label')}</label>
+              <input type="file" id="image" accept="image/*" class="w-full p-3 border border-gray-300 rounded-lg file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <div id="imagePreviewContainer" class="mt-6"></div>
+            </div>
+          `;
+          
+          const imageInput = container.querySelector('#image');
+          imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              imageFile = file;
+              imagePreview = URL.createObjectURL(file);
+              container.querySelector('#imagePreviewContainer').innerHTML = `<p class="text-md font-medium text-gray-700 mb-2">${t('image_preview')}</p><img src="${imagePreview}" alt="Symptom preview" class="max-w-xs rounded-lg shadow-md" />`;
+            }
+          });
+          
+          if (imagePreview) {
+            container.querySelector('#imagePreviewContainer').innerHTML = `<p class="text-md font-medium text-gray-700 mb-2">${t('image_preview')}</p><img src="${imagePreview}" alt="Symptom preview" class="max-w-xs rounded-lg shadow-md" />`;
+          }
+        }
+        
+        // --- Attach Event Listeners ---
+        const startBtn = container.querySelector('#startRecordingButton');
+        if (startBtn) startBtn.addEventListener('click', handleVoiceInput);
+        
+        container.querySelector('#tabDescribe').addEventListener('click', () => { activeTab = 'describe'; renderPatientForm(); });
+        container.querySelector('#tabUpload').addEventListener('click', () => { activeTab = 'upload'; renderPatientForm(); });
+        
+        container.querySelector('#symptomForm').addEventListener('submit', (e) => {
+          e.preventDefault();
+          setState({ symptoms, imageFile, imagePreview });
+          handleSubmit(symptoms, imageFile);
+        });
+      }
+      
+      renderPatientForm();
+      el.appendChild(container);
+      return el;
+    }
+    
+    function createInternDashboard() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { analysisQueue, userProfile } = appState;
+      const pendingCases = analysisQueue.filter(c => c.status === 'pending_review');
+      const displayName = (userProfile && userProfile.firstName) 
+        ? `${userProfile.firstName} ${userProfile.lastName}` 
+        : (userProfile?.email || 'Intern');
+      const initials = (userProfile && userProfile.firstName && userProfile.firstName.length > 0)
+        ? `${userProfile.firstName[0]}${userProfile.lastName?.[0] || ''}`.toUpperCase()
+        : displayName.substring(0, 2).toUpperCase();
+        
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-7xl mx-auto";
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">Medical Intern Dashboard</h2>
+        <div class="flex flex-col lg:flex-row gap-8">
+          
+          <!-- Intern Profile Card -->
+          <div class="lg:w-1/4 w-full">
+            <div class="bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-2xl shadow-xl p-6 flex flex-col items-center text-center">
+              <div class="w-24 h-24 rounded-full bg-white flex items-center justify-center mb-4 ring-4 ring-blue-200">
+                <span class="text-4xl font-bold text-blue-600">${initials}</span>
+              </div>
+              <h3 class="text-2xl font-bold">${displayName}</h3>
+              <p class="text-blue-100">Medical Intern</p>
+              <div class="grid grid-cols-2 gap-4 mt-8 w-full">
+                <div class="text-center">
+                  <p class="text-3xl font-bold">${pendingCases.length}</p>
+                  <p class="text-sm text-blue-100">Pending</p>
+                </div>
+                <div class="text-center">
+                  <p class="text-3xl font-bold">0</p>
+                  <p class="text-sm text-blue-100">Reviewed</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Intern AI Queue -->
+          <div class="lg:w-3/4 w-full">
+            <div class="bg-white rounded-2xl shadow-lg p-8">
+              <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-semibold text-gray-800">AI Analysis Queue</h3>
+              </div>
+              <p class="text-gray-600 mb-8">
+                Assist doctors by reviewing AI-generated diagnoses. 
+                <span id="pendingReviewCount" class="font-semibold text-yellow-600"> ${pendingCases.length} pending review${pendingCases.length === 1 ? '' : 's'}.</span>
+              </p>
+              <div id="queueList" class="space-y-4">
+                ${pendingCases.length === 0 ? `
+                  <div class="p-6 text-center text-gray-500">
+                    No pending reviews.
+                  </div>
+                ` : pendingCases.map(createAnalysisQueueItem).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      el.appendChild(container);
+      
+      el.querySelector('#queueList').addEventListener('click', (e) => {
+        const button = e.target.closest('.review-button');
+        if (button) {
+          const caseId = button.dataset.caseId;
+          const caseItem = appState.analysisQueue.find(c => c.id === caseId);
+          if (caseItem) {
+            handleReview(caseItem);
+          }
+        }
+      });
+      
+      return el;
+    }
+    
+    function createDoctorDashboard() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { analysisQueue, userProfile } = appState;
+      const pendingCases = analysisQueue.filter(c => c.status === 'pending_review');
+      const displayName = (userProfile && userProfile.firstName) 
+        ? `Dr. ${userProfile.firstName} ${userProfile.lastName}` 
+        : (userProfile?.email || 'Doctor');
+      const initials = (userProfile && userProfile.firstName && userProfile.firstName.length > 0)
+        ? `${userProfile.firstName[0]}${userProfile.lastName?.[0] || ''}`.toUpperCase()
+        : displayName.substring(0, 2).toUpperCase();
+        
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-7xl mx-auto";
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">Doctor Dashboard</h2>
+        <div class="flex flex-col lg:flex-row gap-8">
+          
+          <!-- Doctor Profile Card -->
+          <div class="lg:w-1/4 w-full">
+            <div class="bg-gradient-to-br from-teal-500 to-cyan-600 text-white rounded-2xl shadow-xl p-6 flex flex-col items-center text-center">
+              <div class="w-24 h-24 rounded-full bg-white flex items-center justify-center mb-4 ring-4 ring-teal-200">
+                <span class="text-4xl font-bold text-teal-600">${initials}</span>
+              </div>
+              <h3 class="text-2xl font-bold">${displayName}</h3>
+              <p class="text-teal-100">${userProfile?.specialty || 'General Medicine'}</p>
+              <p class="text-teal-200 text-sm">Verified Specialist</p>
+              <div class="grid grid-cols-2 gap-4 mt-8 w-full">
+                 <div class="text-center">
+                  <p class="text-3xl font-bold">${pendingCases.length}</p>
+                  <p class="text-sm text-teal-100">Pending</p>
+                </div>
+                <div class="text-center">
+                  <p class="text-3xl font-bold">${appState.appointments.filter(a => a.status === 'pending').length}</p>
+                  <p class="text-sm text-teal-100">Requests</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Doctor AI Queue -->
+          <div class="lg:w-3/4 w-full">
+            <div class="bg-white rounded-2xl shadow-lg p-8">
+              <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-semibold text-gray-800">AI Analysis Queue</h3>
+              </div>
+              <p class="text-gray-600 mb-8">
+                Verify AI-generated diagnoses to improve patient care. 
+                <span id="pendingReviewCount" class="font-semibold text-yellow-600"> ${pendingCases.length} pending review${pendingCases.length === 1 ? '' : 's'}.</span>
+              </p>
+              <div id="queueList" class="space-y-4">
+                ${pendingCases.length === 0 ? `
+                  <div class="p-6 text-center text-gray-500">
+                    No pending reviews.
+                  </div>
+                ` : pendingCases.map(createAnalysisQueueItem).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      el.appendChild(container);
+      
+      el.querySelector('#queueList').addEventListener('click', (e) => {
+        const button = e.target.closest('.review-button');
+        if (button) {
+          const caseId = button.dataset.caseId;
+          const caseItem = appState.analysisQueue.find(c => c.id === caseId);
+          if (caseItem) {
+            handleReview(caseItem);
+          }
+        }
+      });
+      
+      return el;
+    }
+
+    function createAnalysisQueueItem(caseItem) {
+      let parsedAI = {};
+      try { parsedAI = JSON.parse(caseItem.aiAnalysis || '{}'); } catch (e) {
+        parsedAI = { topCondition: "AI Error", confidence: "N/A", severity: "High" };
+      }
+      
+      const timeAgo = (caseItem.createdAt?.toDate()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) || '';
+      const patientDisplayName = caseItem.patientEmail || `Patient ${caseItem.patientId.substring(0, 4)}`;
+      const initials = patientDisplayName.substring(0, 2).toUpperCase();
+      const isChatInquiry = (parsedAI.topCondition === "Chatbot Inquiry");
+      
+      return `
+        <div class="flex items-center justify-between p-5 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 rounded-full ${isChatInquiry ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'} flex items-center justify-center font-bold">
+              ${isChatInquiry ? 'Q' : initials}
+            </div>
+            <div>
+              <h4 class="text-lg font-semibold text-gray-800">${patientDisplayName}</h4>
+              <p class="text-gray-600">${isChatInquiry ? "Chatbot Inquiry" : (caseItem.symptoms || "Image Analysis")} • ${timeAgo}</p>
+              <div class="flex items-center space-x-2 text-sm text-gray-700 mt-1">
+                ${isChatInquiry ? `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  <span>${parsedAI.topCondition || 'N/A'}</span>
+                ` : `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M5 18H3c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2h4v12H5z"/><path d="M19 18h2c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-4v12h2z"/><path d="M12 22a2.5 2.5 0 0 1-2.5-2.5V1.5A2.5 2.5 0 0 1 12 4a2.5 2.5 0 0 1 2.5 2.5v15A2.5 2.5 0 0 1 12 22z"/></svg>
+                  <span>${parsedAI.topCondition || 'N/A'}</span>
+                  <span class="font-semibold">${parsedAI.confidence || ''}</span>
+                  ${(parsedAI.severity === 'High' || parsedAI.severity === 'Critical') ? 
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>` : ''}
+                `}
+              </div>
+            </div>
+          </div>
+          <button data-case-id="${caseItem.id}" class="review-button flex items-center space-x-2 bg-blue-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Review</span>
+          </button>
+        </div>
+      `;
+    }
+    
+    function createMyRecordsPage() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { patientRecords } = appState;
+      
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-5xl mx-auto";
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">My Medical History</h2>
+        <div class="bg-white rounded-2xl shadow-lg p-8">
+          <div class="space-y-6">
+            ${patientRecords.length === 0 ? `
+              <div class="p-6 text-center text-gray-500">
+                You have no past submissions.
+              </div>
+            ` : patientRecords.map(createPatientRecordItem).join('')}
+          </div>
+        </div>
+      `;
+      el.appendChild(container);
+      return el;
+    }
+
+    function createPatientRecordItem(caseItem) {
+      let parsedAI = {};
+      try { parsedAI = JSON.parse(caseItem.aiAnalysis || '{}'); } catch (e) {
+        parsedAI = { topCondition: "AI Error", severity: "N/A" };
+      }
+      
+      const date = (caseItem.createdAt?.toDate()?.toLocaleDateString()) || 'Unknown Date';
+      const status = caseItem.status === 'pending_review' ? 'Pending Review' : 'Reviewed';
+      const statusColor = caseItem.status === 'pending_review' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
+      const isChatInquiry = (parsedAI.topCondition === "Chatbot Inquiry");
+      
+      return `
+        <div class="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-semibold text-gray-800">${parsedAI.topCondition}</h3>
+            <span class="text-sm font-medium px-3 py-1 rounded-full ${statusColor}">${status}</span>
+          </div>
+          <p class="text-gray-600 mb-4">
+            <strong class="font-medium text-gray-700">Symptoms Submitted:</strong>
+            ${caseItem.symptoms || "Image Analysis"}
+          </p>
+          ${caseItem.doctorNote ? `
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-md mb-4">
+              <strong class="font-medium text-blue-800">Doctor's Note:</strong>
+              <p class="text-blue-700">${caseItem.doctorNote}</p>
+            </div>
+          ` : ''}
+          <div class="grid ${isChatInquiry ? 'grid-cols-1' : 'grid-cols-3'} gap-4 p-4 bg-gray-50 rounded-md">
+            <div>
+              <label class="block text-sm font-medium text-gray-500">Date Submitted</label>
+              <p class="text-md font-semibold text-gray-800">${date}</p>
+            </div>
+            ${!isChatInquiry ? `
+              <div>
+                <label class="block text-sm font-medium text-gray-500">AI Severity</label>
+                <p class="text-md font-semibold text-gray-800">${parsedAI.severity}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-500">Recommended Action</label>
+                <p class="text-md font-semibold text-gray-800">${parsedAI.recommendedAction || 'N/A'}</p>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function createMyProfilePage() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { userProfile, userRole } = appState;
+      const profile = userProfile || {}; 
+      
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-3xl mx-auto";
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">My Profile</h2>
+        <div class="bg-white rounded-2xl shadow-lg p-8">
+          <form id="profileForm" class="space-y-6">
+            
+            <!-- Basic Info -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label for="firstName" class="block text-sm font-medium text-gray-700">First Name</label>
+                <input type="text" name="firstName" id="firstName" value="${profile.firstName || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+              </div>
+              <div>
+                <label for="lastName" class="block text-sm font-medium text-gray-700">Last Name</label>
+                <input type="text" name="lastName" id="lastName" value="${profile.lastName || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+              </div>
+            </div>
+            
+            <!-- Contact Info -->
+            <div>
+              <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+              <input type="email" name="email" id="email" value="${profile.email || ''}" readonly class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-500">
+            </div>
+            <div>
+              <label for="phone" class="block text-sm font-medium text-gray-700">Phone</label>
+              <input type="tel" name="phone" id="phone" value="${profile.phone || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            
+            <!-- Patient-Specific Fields -->
+            ${userRole === 'patient' ? `
+            <div>
+              <label for="dob" class="block text-sm font-medium text-gray-700">Date of Birth</label>
+              <input type="date" name="dob" id="dob" value="${profile.dob || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+              <label for="address" class="block text-sm font-medium text-gray-700">Address</label>
+              <textarea name="address" id="address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">${profile.address || ''}</textarea>
+            </div>
+            ` : ''}
+            
+            <!-- Doctor-Specific Fields -->
+            ${userRole === 'doctor' ? `
+            <div>
+              <label for="specialty" class="block text-sm font-medium text-gray-700">Specialty</label>
+              <input type="text" name="specialty" id="specialty" value="${profile.specialty || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex items-center">
+              <input type="checkbox" name="isPublic" id="isPublic" ${profile.isPublic ? 'checked' : ''} class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="isPublic" class="ml-2 block text-sm text-gray-900">List my profile publicly for appointments</label>
+            </div>
+            ` : ''}
+            
+            <!-- Intern-Specific Fields (None currently) -->
+            ${userRole === 'intern' ? `
+            <div class="p-4 bg-gray-100 rounded-md">
+              <p class="text-sm text-gray-600">Your intern profile is managed by your administrator.</p>
+            </div>
+            ` : ''}
+            
+            <!-- Submit Button (Not for Intern) -->
+            ${userRole !== 'intern' ? `
+            <div class="flex justify-end pt-4">
+              <button type="submit" class="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
+                Update Profile
+              </button>
+            </div>
+            ` : ''}
+          </form>
+        </div>
+      `;
+      
+      // Only attach listener if the form is updatable
+      if(userRole !== 'intern') {
+        container.querySelector('#profileForm').addEventListener('submit', handleUpdateProfile);
+      }
+      
+      el.appendChild(container);
+      return el;
+    }
+    
+    function createFindDoctorPage() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { doctors } = appState;
+      
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-3xl mx-auto";
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">Find a Doctor</h2>
+        <div class="bg-white rounded-2xl shadow-lg p-8">
+          <div class="space-y-4">
+            ${doctors.length === 0 ? `
+              <div class="p-6 text-center text-gray-500">
+                No doctors are currently available for appointments.
+              </div>
+            ` : doctors.map(createDoctorCard).join('')}
+          </div>
+        </div>
+      `;
+      el.appendChild(container);
+      
+      el.addEventListener('click', (e) => {
+        const button = e.target.closest('.request-appt-button');
+        if (button) {
+          const doctorId = button.dataset.doctorId;
+          const doctor = appState.doctors.find(d => d.id === doctorId);
+          if (doctor) {
+            handleRequestAppointment(doctor);
+          }
+        }
+      });
+      return el;
+    }
+    
+    function createDoctorCard(doctor) {
+      const initials = (doctor.firstName && doctor.firstName.length > 0)
+        ? `${doctor.firstName[0]}${doctor.lastName?.[0] || ''}`.toUpperCase()
+        : 'DR';
+      return `
+        <div class="flex items-center justify-between p-5 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center font-bold">
+              ${initials}
+            </div>
+            <div>
+              <h4 class="text-lg font-semibold text-gray-800">Dr. ${doctor.firstName} ${doctor.lastName}</h4>
+              <p class="text-gray-600">${doctor.specialty}</p>
+            </div>
+          </div>
+          <button
+            data-doctor-id="${doctor.id}"
+            class="request-appt-button flex items-center space-x-2 bg-blue-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600"
+          >
+            <span>Request Appointment</span>
+          </button>
+        </div>
+      `;
+    }
+    
+    function createAppointmentsPage() {
+      const el = document.createElement('div');
+      el.className = "min-h-screen bg-gray-100";
+      const header = createAppHeader();
+      el.appendChild(header);
+      
+      const { appointments, userRole } = appState;
+      
+      const container = document.createElement('div');
+      container.className = "p-6 max-w-5xl mx-auto";
+      
+      const pending = appointments.filter(a => a.status === 'pending');
+      const confirmed = appointments.filter(a => a.status === 'confirmed');
+      const declined = appointments.filter(a => a.status === 'declined');
+      
+      container.innerHTML = `
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">My Appointments</h2>
+        <div class="space-y-8">
+        
+          <!-- Pending Requests (Doctors Only) -->
+          ${userRole === 'doctor' ? `
+            <div class="bg-white rounded-2xl shadow-lg p-8">
+              <h3 class="text-2xl font-semibold text-gray-800 mb-6">Pending Requests</h3>
+              <div class="space-y-4">
+                ${pending.length === 0 ? `<p class="text-gray-500">No pending requests.</p>` : pending.map(createAppointmentCard).join('')}
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Upcoming Appointments (All Roles) -->
+          <div class="bg-white rounded-2xl shadow-lg p-8">
+            <h3 class="text-2xl font-semibold text-gray-800 mb-6">Upcoming Appointments</h3>
+            <div class="space-y-4">
+              ${confirmed.length === 0 ? `<p class="text-gray-500">No upcoming appointments.</p>` : confirmed.map(createAppointmentCard).join('')}
+            </div>
+          </div>
+          
+          <!-- Past/Pending (Patients/Interns) or Past (Doctors) -->
+          <div class="bg-white rounded-2xl shadow-lg p-8">
+            <h3 class="text-2xl font-semibold text-gray-800 mb-6">${userRole === 'doctor' ? 'Past' : 'Pending & Past'} Appointments</h3>
+            
+            <!-- Intern-specific message -->
+            ${userRole === 'intern' ? `
+              <div class="p-4 bg-blue-50 border border-blue-200 rounded-md mb-6">
+                <p class="text-blue-700">Interns do not receive direct patient appointment requests. This page shows any appointments you may be scheduled for.</p>
+              </div>
+            ` : ''}
+            
+            <div class="space-y-4">
+              ${(pending.length === 0 && declined.length === 0 && userRole !== 'doctor') ? `<p class="text-gray-500">No pending or past appointments.</p>` : ''}
+              ${(declined.length === 0 && userRole === 'doctor') ? `<p class="text-gray-500">No past appointments.</p>` : ''}
+              
+              <!-- Patients see pending here -->
+              ${(pending.length > 0 && userRole === 'patient') ? pending.map(createAppointmentCard).join('') : ''}
+              
+              <!-- All roles see declined here -->
+              ${declined.length > 0 ? declined.map(createAppointmentCard).join('') : ''}
+            </div>
+          </div>
+          
+        </div>
+      `;
+      el.appendChild(container);
+      
+      // Event listeners for Doctor actions
+      if (userRole === 'doctor') {
+        el.addEventListener('click', (e) => {
+          const approveBtn = e.target.closest('.approve-appt-button');
+          const declineBtn = e.target.closest('.decline-appt-button');
+          if (approveBtn) {
+            handleUpdateAppointmentStatus(approveBtn.dataset.apptId, 'confirmed');
+          }
+          if (declineBtn) {
+            handleUpdateAppointmentStatus(declineBtn.dataset.apptId, 'declined');
+          }
+        });
+      }
+      
+      return el;
+    }
+    
+    function createAppointmentCard(appt) {
+      const { userRole } = appState;
+      const date = (appt.createdAt?.toDate()?.toLocaleDateString()) || 'Unknown Date';
+      const otherPartyName = userRole === 'patient' ? appt.doctorName : appt.patientName;
+      const title = userRole === 'patient' ? `Appointment with ${otherPartyName}` : `Appointment with ${otherPartyName}`;
+      
+      let statusText, statusColor, actions = '';
+      switch(appt.status) {
+        case 'pending':
+          statusText = 'Pending';
+          statusColor = 'bg-yellow-100 text-yellow-800';
+          if (userRole === 'doctor') {
+            actions = `
+              <div class="flex space-x-2">
+                <button data-appt-id="${appt.id}" class="decline-appt-button text-sm bg-red-100 text-red-700 px-3 py-1 rounded-md hover:bg-red-200">Decline</button>
+                <button data-appt-id="${appt.id}" class="approve-appt-button text-sm bg-green-100 text-green-700 px-3 py-1 rounded-md hover:bg-green-200">Approve</button>
+              </div>
+            `;
+          }
+          break;
+        case 'confirmed':
+          statusText = 'Confirmed';
+          statusColor = 'bg-green-100 text-green-800';
+          actions = `<button class="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-md hover:bg-blue-200">Join Call</button>`;
+          break;
+        case 'declined':
+          statusText = 'Declined';
+          statusColor = 'bg-red-100 text-red-800';
+          actions = '';
+          break;
+      }
+      
+      return `
+        <div class="flex items-center justify-between p-5 bg-gray-50 rounded-lg border border-gray-200">
+          <div>
+            <h4 class="text-lg font-semibold text-gray-800">${title}</h4>
+            <p class="text-gray-600">Requested on ${date}</p>
+            <span class="text-sm font-medium px-3 py-1 rounded-full ${statusColor} mt-2 inline-block">${statusText}</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            ${actions}
+          </div>
+        </div>
+      `;
+    }
+
+    // --- Utility Component Builders ---
+    
+    function createCaseReviewModal(caseItem, onApprove) {
+      const el = document.createElement('div');
+      el.id = "caseReviewModal";
+      el.className = "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4";
+      
+      const { symptoms, imageUrl, aiAnalysis } = caseItem;
+      let parsedAI = {};
+      try { parsedAI = JSON.parse(aiAnalysis || '{}'); } catch (e) {
+        parsedAI = { 
+          severity: "N/A", topCondition: "AI Error", confidence: "N/A",
+          preliminaryAnalysis: "Could not parse AI response.",
+          recommendedAction: "Review manually.",
+          disclaimer: "AI response was corrupted."
+        };
+      }
+      
+      let doctorNote = '';
+      const isChatInquiry = (parsedAI.topCondition === "Chatbot Inquiry");
+
+      el.innerHTML = `
+        <div class="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <!-- Header -->
+          <div class="flex justify-between items-center p-6 border-b border-gray-200">
+            <h3 class="text-2xl font-bold text-gray-800">${isChatInquiry ? 'Review Chat Inquiry' : 'Review AI Analysis'}</h3>
+            <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          
+          <!-- Content -->
+          <div class="p-6 grid md:grid-cols-2 gap-6">
+            <!-- Left Panel: Patient Info -->
+            <div class="col-span-1 space-y-4">
+              <h4 class="text-lg font-semibold text-gray-700">Patient-Submitted Info</h4>
+              <div>
+                <label class="block text-sm font-medium text-gray-500">${isChatInquiry ? 'Inquiry' : 'Symptoms'}</label>
+                <p class="p-3 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">${symptoms || "No text submitted."}</p>
+              </div>
+              
+              ${!isChatInquiry ? `
+                ${imageUrl ? `
+                  <div>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Submitted Image</label>
+                    <img src="${imageUrl}" alt="Patient submission" class="rounded-lg shadow-md w-full object-contain" />
+                  </div>
+                ` : `
+                  <div>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Submitted Image</label>
+                    <p class="p-3 bg-gray-50 rounded-md border border-gray-200 text-gray-500">No image submitted.</p>
+                  </div>
+                `}
+              ` : ''}
+            </div>
+            
+            <!-- Right Panel: AI Analysis (or simplified view for chat) -->
+            <div class="col-span-1 space-y-4 ${isChatInquiry ? 'bg-purple-50' : 'bg-blue-50'} p-4 rounded-lg border ${isChatInquiry ? 'border-purple-200' : 'border-blue-200'}">
+              <h4 class="text-lg font-semibold ${isChatInquiry ? 'text-purple-800' : 'text-blue-800'}">${isChatInquiry ? 'Inquiry Details' : 'AI-Generated Analysis'}</h4>
+              
+              ${isChatInquiry ? `
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Status</label>
+                  <p class="text-xl font-bold text-gray-800">Pending Review</p>
+                </div>
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Recommended Action</label>
+                  <p class="text-lg font-semibold text-gray-800">${parsedAI.recommendedAction || 'N/A'}</p>
+                </div>
+              ` : `
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Severity</label>
+                  <p class="text-xl font-bold text-gray-800">${parsedAI.severity || 'N/A'}</p>
+                </div>
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Top Potential Condition</label>
+                  <p class="text-lg font-semibold text-gray-800">${parsedAI.topCondition || 'N/A'} (${parsedAI.confidence || 'N/A'})</p>
+                </div>
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Preliminary Analysis</label>
+                  <p class="text-gray-700">${parsedAI.preliminaryAnalysis || 'N/A'}</p>
+                </div>
+                <div class="bg-white p-3 rounded-md shadow-sm">
+                  <label class="block text-sm font-medium text-gray-500">Recommended Action</label>
+                  <p class="text-lg font-semibold text-gray-800">${parsedAI.recommendedAction || 'N/A'}</p>
+                </div>
+                <div class="bg-red-50 border border-red-200 p-3 rounded-md text-red-800 text-sm">
+                  <p class="font-semibold">Disclaimer:</p>
+                  <p>${parsedAI.disclaimer || 'N/A'}</p>
+                </div>
+              `}
+            </div>
+          </div>
+          
+          <!-- Doctor's Note -->
+          <div class="p-6 border-t">
+            <label for="doctorNote" class="block text-lg font-semibold text-gray-700 mb-3">${isChatInquiry ? 'Response to Patient' : 'Note to Patient'}</label>
+            <textarea id="doctorNote" rows="3" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="${isChatInquiry ? 'e.g., \'Hello, regarding your question about joining... \'' : 'e.g., \'The AI analysis looks correct. Please rest and hydrate...\'' }"></textarea>
+          </div>
+          
+          <!-- Footer Actions -->
+          <div class="p-6 bg-gray-50 border-t border-gray-200 flex justify-end space-x-4">
+            <button id="cancelModal" class="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-300">
+              Cancel
+            </button>
+            <button id="approveButton" class="bg-green-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-600 shadow">
+              Send ${isChatInquiry ? 'Response' : 'Note'} & Mark as Reviewed
+            </button>
+          </div>
+        </div>
+      `;
+      
+      const closeModal = () => el.remove();
+      el.querySelector('#closeModal').addEventListener('click', closeModal);
+      el.querySelector('#cancelModal').addEventListener('click', closeModal);
+      el.querySelector('#doctorNote').addEventListener('input', (e) => doctorNote = e.target.value);
+      el.querySelector('#approveButton').addEventListener('click', () => {
+        onApprove(caseItem.id, caseItem.patientId, doctorNote);
+      });
+      return el;
+    }
+
+    function createLoadingSpinner() {
+      const el = document.createElement('div');
+      el.id = "loading-overlay";
+      el.className = "fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50";
+      el.innerHTML = `<div class="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>`;
+      return el;
+    }
+
+    function createErrorMessage(message, clearError) {
+      const el = document.createElement('div');
+      el.id = "error-message";
+      el.className = "fixed top-5 right-5 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg z-50 shadow-lg";
+      el.setAttribute('role', 'alert');
+      el.innerHTML = `
+        <strong class="font-bold">Error: </strong>
+        <span class="block sm:inline">${message}</span>
+        <button id="closeError" class="absolute top-0 bottom-0 right-0 px-4 py-3">
+          <svg class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      `;
+      el.querySelector('#closeError').addEventListener('click', clearError);
+      return el;
+    }
+
+    // --- Initial Render ---
+    // The onAuthStateChanged listener will trigger the first render
+    
+  </script>
+</head>
+<body class="bg-gray-100">
+  <!-- Main application container -->
+  <div id="app">
+    <!-- App content will be rendered here by JavaScript -->
+    <!-- Initial loading state -->
+    <div class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50" id="initial-loader">
+      <div class="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  </div>
+
+  <!-- Chatbot HTML -->
+  <button id="chat-toggle-button" class="fixed bottom-6 right-6 bg-blue-600 text-white w-16 h-16 rounded-full shadow-xl flex items-center justify-center z-20 hover:bg-blue-700 transition-transform transform hover:scale-110">
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+  </button>
+
+  <div id="chat-widget" class="hidden fixed bottom-24 right-6 w-full max-w-sm h-[60vh] bg-white rounded-2xl shadow-2xl z-20 flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="flex justify-between items-center p-4 bg-blue-600 text-white">
+      <h3 class="text-lg font-semibold">CareBridge1 Assistant</h3>
+      <button id="chat-close-button" class="text-blue-100 hover:text-white">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-3">
+      <!-- Messages will be appended here -->
+    </div>
+
+    <!-- Options -->
+    <div id="chat-options" class="p-4 border-t border-gray-200 flex flex-wrap gap-2">
+      <!-- Options will be appended here -->
+    </div>
+    
+    <!-- NEW: Chat Input Form (hidden by default) -->
+    <div id="chat-input-form" class="hidden p-4 border-t border-gray-200">
+      <form id="chat-input-form-element" class="flex space-x-2">
+        <input type="text" id="chat-input-field" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500" placeholder="Type your question...">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // --- Chatbot Logic (Separate from Firebase module) ---
+    
+    // DOM Elements
+    const chatToggleButton = document.getElementById('chat-toggle-button');
+    const chatWidget = document.getElementById('chat-widget');
+    const chatCloseButton = document.getElementById('chat-close-button');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatOptions = document.getElementById('chat-options');
+
+    // Bot Responses
+    const botResponses = {
+      'welcome': 'Hello! I am the CareBridge1 assistant. How can I help you today?',
+      'about_us': 'CareBridge1 is an advanced AI-powered telemedicine platform designed to connect patients with healthcare professionals seamlessly.',
+      'why_us': 'We use AI to provide quick preliminary symptom analysis, manage your health records securely, and make it easy to find and connect with verified doctors.',
+      'functions': 'Our platform allows you to:\n• Check symptoms using our AI Symptom Checker.\n• Upload medical images for analysis.\n• Find and request appointments with verified doctors.\n• Manage your appointments and view your past health records.',
+      'join_links': 'Joining is easy! Just use the "Register" option on the main login screen. You can sign up as a Patient, Doctor, or Intern right from there.',
+      'how_to_use': 'Happy to help! To give you the right instructions, could you tell me your role?',
+      'how_to_patient': "As a Patient:\n1.  **Use the Dashboard:** This is your main page to check symptoms or upload images for AI analysis.\n2.  **Submit for Analysis:** After describing your symptoms, click 'Submit'. A professional will review the AI analysis and send you a note.\n3.  **My Records:** View all your past submissions and doctor's notes.\n4.  **Find a Doctor:** Browse our list of doctors and request an appointment.\n5.  **My Appointments:** Track the status of your appointment requests.",
+      'how_to_professional': "As a Doctor or Intern:\n1.  **Use the Dashboard:** Your main page is the 'AI Analysis Queue'. You can see all pending patient submissions here.\n2.  **Review Cases:** Click 'Review' on any case to see the patient's symptoms, images, and the AI's preliminary analysis.\n3.  **Send Notes:** After reviewing, you can write a note back to the patient and mark the case as 'Reviewed'.\n4.  **Manage Appointments (Doctors):** Doctors can go to 'My Appointments' to approve or decline incoming patient requests.",
+      'go_back': 'Is there anything else I can help with?',
+      'others_prompt': 'Please type your question or inquiry below. An intern or doctor will get back to you.',
+      'others_thanks': 'Thank you! Your message has been sent to our team for review. A professional should respond within 2 hours. You can check "My Records" or your notifications for a response.'
+    };
+
+    const initialOptions = [
+      { text: 'Know About Us', key: 'about_us' },
+      { text: 'Why Us?', key: 'why_us' },
+      { text: 'How do I use this site?', key: 'how_to_use' },
+      { text: 'How do I join?', key: 'join_links' },
+      { text: 'Others...', key: 'others' }
+    ];
+    
+    const howToUseOptions = [
+      { text: 'I am a Patient', key: 'how_to_patient' },
+      { text: 'I am a Professional (Doctor/Intern)', key: 'how_to_professional' },
+      { text: 'Go Back', key: 'go_back' }
+    ];
+    
+    const backOptions = [
+      { text: 'Go back to main menu', key: 'go_back' }
+    ];
+
+    // Functions
+    function appendBotMessage(text) {
+      const messageEl = document.createElement('div');
+      messageEl.className = 'p-3 rounded-lg bot-message max-w-xs';
+      messageEl.textContent = text;
+      chatMessages.appendChild(messageEl);
+      scrollToBottom();
+    }
+    
+    function appendUserMessage(text) {
+      const messageEl = document.createElement('div');
+      messageEl.className = 'p-3 rounded-lg user-message max-w-xs';
+      messageEl.textContent = text;
+      chatMessages.appendChild(messageEl);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function renderOptions(options) {
+      chatOptions.innerHTML = '';
+      options.forEach(option => {
+        const button = document.createElement('button');
+        button.className = 'chat-option-button';
+        button.textContent = option.text;
+        button.dataset.key = option.key;
+        chatOptions.appendChild(button);
+      });
+    }
+
+    function handleOptionClick(key, userText) {
+      // 1. Show the user's choice as a message
+      appendUserMessage(userText);
+      
+      // 2. Show the bot's response
+      const response = botResponses[key];
+      appendBotMessage(response);
+      
+      // 3. Render the next set of options
+      switch (key) {
+        case 'about_us':
+        case 'why_us':
+        case 'functions':
+        case 'join_links':
+        case 'how_to_patient':
+        case 'how_to_professional':
+          renderOptions(backOptions);
+          break;
+        case 'how_to_use':
+          renderOptions(howToUseOptions);
+          break;
+        case 'others':
+          // We need to check if the user is a logged-in patient
+          // We access the appState directly from the global window object
+          if (window.appState && window.appState.userRole === 'patient') { 
+            // User is a patient, proceed
+            document.getElementById('chat-options').classList.add('hidden');
+            document.getElementById('chat-input-form').classList.remove('hidden');
+            document.getElementById('chat-input-field').focus();
+          } else {
+            // User is not a patient or not logged in, show error and go back
+            appendBotMessage("Sorry, this feature is for logged-in patients only. Please log in as a patient to send a message.");
+            renderOptions(backOptions); // Show "Go back"
+          }
+          break; 
+        case 'go_back':
+        case 'welcome':
+        default:
+          renderOptions(initialOptions);
+          break;
+      }
+    }
+
+    // Event Listeners
+    chatToggleButton.addEventListener('click', () => {
+      chatWidget.classList.toggle('hidden');
+      if (!chatWidget.classList.contains('hidden')) {
+        initChatbot();
+      }
+    });
+
+    chatCloseButton.addEventListener('click', () => {
+      chatWidget.classList.add('hidden');
+    });
+
+    chatOptions.addEventListener('click', (e) => {
+      const button = e.target.closest('.chat-option-button');
+      if (button) {
+        const key = button.dataset.key;
+        const userText = button.textContent;
+        handleOptionClick(key, userText);
+      }
+    });
+
+    // --- Event listener for chat input form ---
+    const chatInputForm = document.getElementById('chat-input-form-element');
+    const chatInputField = document.getElementById('chat-input-field');
+
+    chatInputForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const messageText = chatInputField.value.trim();
+      if (messageText) {
+        // 1. Show user's message
+        appendUserMessage(messageText);
+        
+        // 2. Show bot "thanks" message
+        appendBotMessage(botResponses.others_thanks);
+        
+        // 3. Send to Firebase by calling the function from the module script
+        // We can do this because submitChatInquiryToFirebase is on the global window scope
+        if (typeof window.submitChatInQueryToFirebase === 'function') {
+          window.submitChatInQueryToFirebase(messageText);
+        } else {
+          // This else block is a fallback, but the bug fix should prevent it
+          console.error("submitChatInquiryToFirebase is not available on window.");
+          appendBotMessage("Sorry, a connection error occurred. Please try again.");
+        }
+        
+        // 4. Reset UI
+        chatInputField.value = '';
+        document.getElementById('chat-input-form').classList.add('hidden');
+        document.getElementById('chat-options').classList.remove('hidden');
+        renderOptions(backOptions); // Show "Go back"
+      }
+    });
+
+    // Initialize chatbot UI
+    function initChatbot() {
+      chatMessages.innerHTML = '';
+      appendBotMessage(botResponses.welcome);
+      renderOptions(initialOptions);
+      // Ensure the input form is hidden on init
+      document.getElementById('chat-input-form').classList.add('hidden');
+      document.getElementById('chat-options').classList.remove('hidden');
+    }
+  </script>
+
+</body>
+</html>
